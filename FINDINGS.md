@@ -35,6 +35,7 @@ If Flawrence found a bug in your project, please open a pull request and add it 
 
 - [GHSA-48c5-x28r-fff9](https://github.com/a-sit-plus/awesn1/security/advisories/GHSA-48c5-x28r-fff9). Quadratic time when converting large ASN.1 INTEGER and OID values to decimal.
 - [GHSA-q34j-33q7-fw9h](https://github.com/a-sit-plus/awesn1/security/advisories/GHSA-q34j-33q7-fw9h). Quadratic time and memory when parsing nested encapsulating OCTET STRINGs.
+- Multiple other findings assessed as not being security-critical being addressed through regular pull requests.
 
 ## vercel-labs/just-bash
 
@@ -47,7 +48,7 @@ If Flawrence found a bug in your project, please open a pull request and add it 
 
 ## Bouncy Castle
 
-- [Contributors list](https://www.bouncycastle.org/engage/contributors/). Lenient ASN.1 UTCTime and GeneralizedTime parsing accepted structurally malformed content. The report included test cases from fuzzing, and further fuzzing covered date validity.
+- [Contributors list](https://www.bouncycastle.org/engage/contributors/). Lenient ASN.1 UTCTime and GeneralizedTime parsing accepted structurally malformed content. The report included test cases from fuzzing, and further fuzzing covered date validity. Initial discovery was made manually, follow-up findings on a believed-to-be fixed state were discovered using Flawrence.
 
 ## apache/superset
 
