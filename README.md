@@ -10,6 +10,9 @@ It works with Anthropic, OpenAI, Cloudflare Workers AI and any OpenAI-compatible
 
 The bugs Flawrence has found so far are listed in [FINDINGS.md](FINDINGS.md).
 
+<img width="2388" height="8630" alt="image" src="https://github.com/user-attachments/assets/f2d1acea-aa25-4e3f-9e3a-6d740c6a9a28" />
+
+
 > [!WARNING]
 > Agents run shell commands, build the target and execute proofs of concept.
 > Run Flawrence in a container or a VM. Never point it at a machine you care about.
