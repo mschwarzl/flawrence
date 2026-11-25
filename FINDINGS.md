@@ -41,6 +41,12 @@ If Flawrence found a bug in your project, please open a pull request and add it 
 
 - [GHSA-g5pf-mh4h-h655](https://github.com/vercel-labs/just-bash/security/advisories/GHSA-g5pf-mh4h-h655). Sandbox escape from `ReadWriteFs` through pre-existing hard links.
 
+## vbpf/prevail
+
+- [GHSA-2qc8-qh94-66rc](https://github.com/vbpf/prevail/security/advisories/GHSA-2qc8-qh94-66rc) (CVE-2026-53670). A typeset with more than one type in `add()` skips the offset update. Out-of-bounds accesses pass eBPF verification.
+- [GHSA-65rv-h458-cq99](https://github.com/vbpf/prevail/security/advisories/GHSA-65rv-h458-cq99) (CVE-2026-53671). A context write in `do_mem_store` is a no-op. Unsafe eBPF programs pass verification.
+- [GHSA-65fp-5qmq-gg2m](https://github.com/vbpf/prevail/security/advisories/GHSA-65fp-5qmq-gg2m) (CVE-2026-53706). ALU32 pointer arithmetic is accepted without a 64-bit check. The verifier passes programs that corrupt pointers.
+
 ## android/keyattestation
 
 - [GHSA-fwcv-9wq2-cg54](https://github.com/android/keyattestation/security/advisories/GHSA-fwcv-9wq2-cg54). The StrongBox security level from the certificate chain is never evaluated.
