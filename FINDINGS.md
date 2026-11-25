@@ -41,6 +41,12 @@ If Flawrence found a bug in your project, please open a pull request and add it 
 
 - [GHSA-g5pf-mh4h-h655](https://github.com/vercel-labs/just-bash/security/advisories/GHSA-g5pf-mh4h-h655). Sandbox escape from `ReadWriteFs` through pre-existing hard links.
 
+## vllm-project/vllm
+
+- [GHSA-vfp2-c8pq-v6h6](https://github.com/vllm-project/vllm/security/advisories/GHSA-vfp2-c8pq-v6h6). SSRF through the `X-Request-Id` header drives the P2pNcclConnector and leaks KV cache tensors.
+- [GHSA-mm38-5g96-7j6x](https://github.com/vllm-project/vllm/security/advisories/GHSA-mm38-5g96-7j6x). The Nemotron-VL processors turn off the Pillow decompression bomb guard for the whole process. This allows unauthenticated denial of service.
+- [GHSA-w9r6-29q4-pvpr](https://github.com/vllm-project/vllm/security/advisories/GHSA-w9r6-29q4-pvpr). Unvalidated `stop_token_ids` crash the engine and cause an out-of-bounds GPU write.
+
 ## vbpf/prevail
 
 - [GHSA-2qc8-qh94-66rc](https://github.com/vbpf/prevail/security/advisories/GHSA-2qc8-qh94-66rc) (CVE-2026-53670). A typeset with more than one type in `add()` skips the offset update. Out-of-bounds accesses pass eBPF verification.
