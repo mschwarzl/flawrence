@@ -1,0 +1,30 @@
+services:
+  flawrence:
+    # Use the host's native architecture; the Dockerfile builds native tools.
+    build: .
+    command: ["bash"]
+    env_file:
+      - path: .env
+        required: false
+    stdin_open: true
+    tty: true
+    volumes:
+      - ${FLAWRENCE_ARTIFACTS_DIR:-./artifacts}:/artifacts
+      - ./agents:/usr/local/bin/agents:ro
+      - ./skills:/usr/local/bin/skills:ro
+      - flawrence-home:/root
+      - flawrence-workspace:/workspace
+
+  flawrence-web:
+    extends:
+      service: flawrence
+    profiles: ["web"]
+    command: ["flawrence-web", "--host", "0.0.0.0"]
+    stdin_open: false
+    tty: false
+    ports:
+      - "127.0.0.1:${FLAWRENCE_WEB_PORT:-8080}:${PORT:-8080}"
+
+volumes:
+  flawrence-home:
+  flawrence-workspace:

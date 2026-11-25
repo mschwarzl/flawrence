@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = [
+    "lib/flawrence-chat",
+    "lib/flawrence-api",
+    "lib/flawrence-index",
+    "lib/flawrence-agent",
+    "lib/flawrence-tool",
+    "lib/flawrence-task",
+    "lib/flawrence-status",
+    "bin/flawrence-runner",
+    "bin/flawrence-index",
+]
+
+[workspace.package]
+license = "MIT"

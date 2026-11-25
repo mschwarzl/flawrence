@@ -1,0 +1,32 @@
+[package]
+name = "flawrence-task"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+flawrence-chat = { path = "../flawrence-chat" }
+flawrence-api = { path = "../flawrence-api" }
+flawrence-agent = { path = "../flawrence-agent" }
+flawrence-tool = { path = "../flawrence-tool" }
+flawrence-index = { path = "../flawrence-index" }
+
+anyhow = "1.0"
+jsonschema = "0.28"
+chrono = { version = "0.4.43", features = ["serde"] }
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
+serde_json = "1.0"
+termimad = "0.34"
+tokio = { version = "1.49", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+uuid = { version = "1", features = ["v7"] }
+
+[dev-dependencies]
+async-trait = "0.1.92"
+tempfile = "3"
+# `test-util` (not part of `full`) gives the heartbeat tests a paused clock, so
+# they assert on elapsed time without actually waiting for it.
+tokio = { version = "1.49", features = ["full", "test-util"] }

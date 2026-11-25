@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flawrence</title>
+<link rel="icon" type="image/svg+xml" sizes="any" href="/launcher/harp.svg">
+<style>
+  :root {
+    color-scheme: dark;
+    font: 15px/1.6 ui-monospace, 'SFMono-Regular', Consolas, monospace;
+    color: #d1ffe5;
+    background: #04090c;
+    --acid: #b6ff00;
+    --cyan: #00f0ff;
+    --pink: #ff3b9a;
+  }
+  * { box-sizing: border-box; }
+  ::selection { color: #04090c; background: var(--acid); }
+  body {
+    max-width: 980px; margin: 3rem auto; padding: 0 1.25rem 3rem;
+    background:
+      radial-gradient(ellipse at 0 0, #00f0ff0a, transparent 60%),
+      linear-gradient(#00f0ff08 1px, transparent 1px),
+      linear-gradient(90deg, #00f0ff08 1px, transparent 1px);
+    background-size: auto, 32px 32px, 32px 32px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: 10; pointer-events: none;
+    background: repeating-linear-gradient(transparent 0 3px, #0003 3px 4px);
+  }
+  h1 {
+    margin: 0; padding: 0 0 1.2rem; border-bottom: 1px solid var(--cyan);
+    font-size: clamp(2rem, 6vw, 3.4rem); line-height: 1.1;
+    text-transform: uppercase; letter-spacing: -.06em; color: var(--acid);
+    text-shadow: 3px 1px 0 #ff3b9a99, -2px -1px 0 #00f0ff99, 0 0 28px #b6ff0040;
+  }
+  h1::before, h1::after {
+    display: block; font-size: .65rem; letter-spacing: .15em;
+    line-height: 1.6; text-shadow: none; font-weight: normal;
+  }
+  h1::before { content: '/// FLAWRENCE.OS // SECURITY OPERATIONS TERMINAL'; color: var(--cyan); margin-bottom: 1rem; }
+  h1::after { content: '[ OPERATOR CONSOLE ] // HACK THE PLANET_'; color: var(--pink); margin-top: 1rem; }
+  .harp {
+    display: inline-block; position: relative; width: .95em; height: .95em;
+    margin-left: .12em; vertical-align: -.1em;
+    filter: drop-shadow(0 0 10px #b6ff0066);
+  }
+  .harp::before, .harp::after, .harp-mark {
+    content: ''; position: absolute; inset: 0;
+    mask: url('/launcher/harp.svg') center / contain no-repeat;
+    -webkit-mask: url('/launcher/harp.svg') center / contain no-repeat;
+  }
+  .harp::before { background: var(--cyan); transform: translate(-2px, -1px); }
+  .harp::after { background: var(--pink); transform: translate(3px, 1px); }
+  .harp-mark {
+    z-index: 1;
+    background: repeating-linear-gradient(0deg, var(--acid) 0 3px, #8ed000 3px 4px);
+  }
+  body > p:first-of-type { color: #89aaa0; margin: 1rem 0 2rem; }
+  form {
+    position: relative; padding: 2rem; border: 1px solid #257c66;
+    border-top: 3px solid var(--acid); background: #07120ff5;
+    box-shadow: 0 0 35px #b6ff000a, inset 0 0 60px #00f0ff04, 7px 7px 0 #00f0ff12;
+    counter-reset: channel;
+  }
+  form::before {
+    content: 'ROOT@FLAWRENCE:~# ./initialize_run'; display: block;
+    padding-bottom: 1rem; border-bottom: 1px dashed #257c66;
+    color: var(--acid); font-size: .75rem; overflow-wrap: anywhere;
+  }
+  form:has(fieldset:disabled) { border-top-color: #ffc857; }
+  form:has(fieldset:disabled)::before { content: 'INPUT LOCK // STANDBY FOR PROCESS CONTROL'; color: #ffc857; }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  label { display: block; font-weight: 700; margin: 1.3rem 0 .4rem; color: var(--cyan); text-transform: uppercase; letter-spacing: .1em; font-size: .75rem; }
+  #inputs > label::before, #environment-heading::before { counter-increment: channel; content: '[' counter(channel, decimal-leading-zero) '] // '; color: #729c89; }
+  #environment-heading { font-size: .75rem; color: var(--cyan); margin: 1.3rem 0 .4rem; letter-spacing: .1em; text-transform: uppercase; }
+  #env-controls { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .env-control { grid-column: span 3; border: 1px solid #315c4d; padding: .8rem; min-width: 0; }
+  .env-control.cost { grid-column: span 2; }
+  .env-control.model { grid-column: 1 / -1; }
+  .env-control.providers { grid-column: 1 / -1; }
+  .model-fields, .provider-fields { display: grid; grid-template-columns: minmax(9rem, .7fr) minmax(0, 1fr) auto; gap: .75rem; align-items: end; }
+  .provider-fields { grid-template-columns: 1fr 2fr 1fr; }
+  .provider-panel { margin-top: .75rem; border-top: 1px solid #315c4d; padding-top: .75rem; }
+  .provider-panel summary { cursor: pointer; color: var(--cyan); }
+  .provider-status { color: #8cae9d; font-size: .73rem; overflow-wrap: anywhere; }
+  .custom-provider { border-bottom: 1px dashed #315c4d; padding: .75rem 0; }
+  .provider-panel label { margin-top: .75rem; }
+  .env-control button { margin-top: .75rem; padding: .5rem .7rem; font-size: .73rem; box-shadow: none; }
+  .model-fields input, .model-fields select, #refresh-models { height: 2.75rem; }
+  .model-input { position: relative; }
+  .model-input input { padding-right: 3rem; }
+  #toggle-models { position: absolute; inset: 0 0 auto auto; width: 2.5rem; height: 2.75rem; margin: 0; padding: 0; background: #020907; color: var(--cyan); border-color: #315c4d; }
+  #model-suggestions { position: absolute; inset: 100% 0 auto; z-index: 20; max-height: 16rem; overflow-y: auto; border: 1px solid var(--cyan); background: #020907; box-shadow: 0 5px 20px #0009; }
+  .model-option { padding: .5rem .75rem; cursor: pointer; overflow-wrap: anywhere; }
+  .model-option:hover, .model-option[aria-selected=true] { color: var(--acid); background: #12352b; }
+  #refresh-models { margin: 0; width: 2.75rem; padding: 0; font-size: 1.35rem; line-height: 1; }
+  [hidden] { display: none !important; }
+  .env-control label { margin: 0 0 .5rem; letter-spacing: 0; text-transform: none; }
+  .env-control code { display: block; font-size: .65rem; overflow-wrap: anywhere; color: #8cae9d; }
+  .env-control input[type=range] { padding: .5rem 0; box-shadow: none; accent-color: var(--acid); }
+  input[type=checkbox] { width: auto; margin-right: .5rem; accent-color: var(--acid); box-shadow: none; }
+  #effective-env { color: #8cae9d; background: #08100d; font-size: .85rem; opacity: .6; box-shadow: none; caret-color: transparent; cursor: default; }
+  #env-note { min-height: 1.5em; }
+  input, select, textarea, button { font: inherit; }
+  input, select, textarea {
+    width: 100%; min-width: 0; padding: .75rem; border: 1px solid #315c4d;
+    border-radius: 0; background: #020907; color: #d1ffe5; caret-color: var(--acid);
+    box-shadow: inset 3px 0 0 #b6ff0022;
+  }
+  input::placeholder, textarea::placeholder { color: #719184; opacity: 1; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--cyan); outline-offset: 4px; box-shadow: 0 0 20px #00f0ff26;
+  }
+  textarea { resize: vertical; tab-size: 2; }
+  #env { font-size: .85rem; color: var(--acid); }
+  button {
+    padding: .8rem 1.2rem; margin-top: 1.5rem; border: 1px solid var(--acid);
+    border-radius: 0; cursor: pointer; background: var(--acid); color: #071000;
+    font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    box-shadow: 4px 4px 0 #b6ff0033, 0 0 20px #b6ff001c;
+  }
+  button:not(:disabled):hover { background: var(--cyan); border-color: var(--cyan); box-shadow: 4px 4px 0 #00f0ff33, 0 0 25px #00f0ff40; }
+  button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+  input:disabled, select:disabled, textarea:disabled { opacity: .6; }
+  #interrupt { border-color: var(--pink); color: #ffd4e8; background: #310f22; box-shadow: 4px 4px 0 #ff3b9a26; }
+  #interrupt:not(:disabled):hover { color: #fff; background: #8c174e; box-shadow: 0 0 24px #ff3b9a55; }
+  small { display: block; color: #8cae9d; font-size: .73rem; margin-top: .55rem; }
+  #status {
+    white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem;
+    border: 1px solid #257c66; border-left: 3px solid var(--cyan); background: #061311;
+    font-size: .8rem; color: var(--cyan);
+  }
+  #status::before { content: '> TELEMETRY_FEED // '; color: #d1ffe5; }
+  a { color: var(--acid); text-underline-offset: 4px; }
+  a:hover { color: var(--cyan); }
+  .log-panel { margin-top: 2rem; }
+  .log-panel h2 { color: var(--cyan); font-size: .85rem; letter-spacing: .1em; text-transform: uppercase; }
+  #output-log { height: 22rem; font-size: .8rem; line-height: 1.5; white-space: pre; overflow: auto; }
+  #log-note { min-height: 1.5em; }
+  form.launching { animation: launch-glitch 3.9s steps(1, end); }
+  #launch-effect { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; padding: 1rem; }
+  .hackerman-card { width: min(36rem, 100%); padding: 2rem 1rem; text-align: center; border: 2px solid var(--acid); background: #07120ff5; box-shadow: 5px 5px 0 #ff3b9a66, -5px -5px 0 #00f0ff55, 0 0 50px #b6ff0033; animation: hackerman-card 3.9s steps(1, end) both, hackerman-jolt .7s steps(1, end) infinite; }
+  .hackerman-card strong { display: block; font-size: clamp(1.5rem, 5vw, 3rem); letter-spacing: .18em; line-height: 1.3; color: var(--acid); animation: hackerman-text .48s steps(1, end) infinite; }
+  .hackerman-card p { margin: .8rem 0; color: var(--cyan); font-size: .8rem; letter-spacing: .08em; }
+  .hackerman-card .hackerman-motto { color: var(--pink); font-size: 1.1rem; font-weight: bold; }
+  @keyframes launch-glitch {
+    0%, 10%, 22%, 39%, 57%, 75%, 89%, 100% { transform: none; text-shadow: none; }
+    2%, 19%, 36%, 54%, 72%, 93% { transform: translate(-5px, 2px); text-shadow: 5px 0 var(--cyan), -5px 0 var(--pink); }
+    5%, 20%, 37%, 55%, 73%, 96% { transform: translate(5px, -2px); text-shadow: -5px 0 var(--cyan), 5px 0 var(--pink); }
+    8%, 98% { transform: translate(-1px, 0); }
+  }
+  @keyframes hackerman-card {
+    0%, 11.5%, 88.5%, 100% { opacity: 0; visibility: hidden; }
+    11.6%, 88.4% { opacity: 1; visibility: visible; }
+  }
+  @keyframes hackerman-jolt {
+    0%, 18%, 38%, 68%, 100% { transform: none; }
+    12% { transform: translate(-9px, 2px) skewX(-3deg); }
+    28% { transform: translate(7px, -2px) skewX(2deg); }
+    62% { transform: translate(-5px, 0) skewX(-1deg); }
+  }
+  @keyframes hackerman-text {
+    0%, 42%, 78%, 100% { transform: none; text-shadow: 2px 0 var(--cyan), -2px 0 var(--pink); }
+    12%, 64% { transform: translate(-6px, 1px) skewX(-6deg); text-shadow: 10px 0 var(--cyan), -10px 0 var(--pink); }
+    24%, 70% { transform: translate(6px, -1px) skewX(5deg); text-shadow: -8px 0 var(--cyan), 8px 0 var(--pink); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    form.launching, .hackerman-card, .hackerman-card strong { animation: none; }
+  }
+  footer {
+    margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #257c66;
+    color: #8cae9d; font-size: .73rem;
+  }
+  @media (max-width: 600px) {
+    #env-controls { grid-template-columns: 1fr; }
+    #env-controls .env-control { grid-column: auto; }
+    .model-fields, .provider-fields { grid-template-columns: 1fr; }
+    body { margin: 1.5rem auto; padding-inline: .8rem; }
+    form { padding: 1rem; }
+    input, select, textarea { font-size: 16px; }
+    h1::before, h1::after { letter-spacing: .04em; }
+  }
+  @media (forced-colors: active) {
+    body::before { display: none; }
+    h1 { text-shadow: none; }
+    .harp { filter: none; }
+    .harp::before, .harp::after { display: none; }
+    .harp-mark { background: CanvasText; }
+  }
+</style>
+<h1>Flawrence<span class="harp" aria-hidden="true"><span class="harp-mark"></span></span></h1>
+<p>Configure one run and optionally follow its live dashboard in a new tab.</p>
+<form id="form" autocomplete="off">
+  <fieldset id="inputs" disabled>
+    <label for="directory">Workspace directory</label>
+    <input id="directory" name="directory" placeholder="/workspace/project" required>
+    <small>Existing directory on the server, or inside the container.</small>
+    <label for="artifacts">Artifacts directory</label>
+    <input id="artifacts" name="artifacts" placeholder="/artifacts/project" required>
+    <section aria-labelledby="environment-heading" id="environment-section">
+      <h2 id="environment-heading">Environment</h2>
+      <small>Loaded from the server environment and .env, or restored from the current run. Token limits use 1k = 1,024 tokens. Memory is in MiB.</small>
+      <div id="env-controls"></div>
+      <small>Context tokens must exceed completion tokens. Input and output prices must both be provided to override pricing; cache read price is optional.</small>
+      <label for="env">Additional environment / overrides</label>
+      <textarea id="env" name="env" rows="8" spellcheck="false" placeholder="FLAWRENCE_MODEL=anthropic/claude-sonnet-4-6
+MAX_COST_USD=50"></textarea>
+      <small>Dotenv KEY=value syntax; custom variables are allowed. Values here override the dedicated controls, including values outside their ranges. Remove an override to use its control again. Credentials are visible to launcher users. Values are not saved in browser storage.</small>
+      <label for="effective-env">Effective run environment (read-only)</label>
+      <textarea id="effective-env" rows="10" readonly spellcheck="false" aria-describedby="env-note"></textarea>
+      <small>Live merged Flawrence settings and custom overrides passed to the runner. Other server variables remain inherited. No Cap slider positions and blank optional prices remove their server/.env values.</small>
+      <small id="env-note" role="status" aria-live="polite"></small>
+    </section>
+    <label for="agent">Top-level agent</label>
+    <select id="agent" name="agent" required></select>
+    <label for="query">Query</label>
+    <textarea id="query" name="query" rows="8" required placeholder="Describe the analysis to run…"></textarea>
+    <label for="web-ui"><input id="web-ui" type="checkbox" checked> Enable run dashboard</label>
+    <button type="submit">Start run ↗</button>
+  </fieldset>
+</form>
+<button id="interrupt" type="button" disabled>Send Ctrl+C</button>
+<small>1: drain · 2: cancel subagents and consolidate · 3: abort.<br>
+With the dashboard enabled, the runner keeps it open after completion; send Ctrl+C to close it and unlock this form.</small>
+<p id="status" role="status" aria-live="polite">Connecting…</p>
+<p><a id="dashboard" target="_blank" rel="noopener" hidden>Open run dashboard ↗</a></p>
+<section class="log-panel" aria-labelledby="log-heading">
+  <h2 id="log-heading">WIRETAP // LIVE RUNNER OUTPUT</h2>
+  <small>Last 1,000 lines · refreshes every second · scroll up to read, scroll to the bottom to follow.</small>
+  <textarea id="output-log" aria-labelledby="log-heading" readonly wrap="off" spellcheck="false"
+    placeholder="Output will appear here when a run starts."></textarea>
+  <small id="log-note" role="status"></small>
+</section>
+<footer>
+  <a href="https://www.flaticon.com/free-icons/harp" title="harp icons" target="_blank" rel="noopener noreferrer">Harp icons created by Magnific - Flaticon</a>
+  · <a href="https://www.flaticon.com/free-icon/harp_4752991" target="_blank" rel="noopener noreferrer">Original icon</a>
+</footer>
+<div id="launch-effect" hidden aria-hidden="true">
+  <div class="hackerman-card">
+    <strong>DEPLOYING CYBER</strong>
+    <p>AGENT SWARM INITIALIZING</p>
+    <p class="hackerman-motto">CONFIDENCE EXCEEDS EVIDENCE</p>
+    <small>*run started. competence pending.</small>
+  </div>
+</div>
+<script>
+  const form = document.querySelector('#form');
+  const inputs = document.querySelector('#inputs');
+  const agent = document.querySelector('#agent');
+  const environment = document.querySelector('#env');
+  const effectiveEnvironment = document.querySelector('#effective-env');
+  const environmentNote = document.querySelector('#env-note');
+  const interrupt = document.querySelector('#interrupt');
+  const message = document.querySelector('#status');
+  const dashboard = document.querySelector('#dashboard');
+  const webUi = document.querySelector('#web-ui');
+  const outputLog = document.querySelector('#output-log');
+  const logNote = document.querySelector('#log-note');
+  const launchEffect = document.querySelector('#launch-effect');
+  let launchAnimation;
+  let submitting = false;
+  let agentsValid = false;
+  let polling = false;
+  let logPolling = false;
+  let logRunId = null;
+  let restoredRunUrl = null;
+  let environmentValid = false;
+  let previewVersion = 0;
+  let previewTimer;
+  let providerStatuses = [];
+  let discoveryVersion = 0;
+  let discoverySignature = '';
+  let customProviderIndex = 0;
+  const customProviders = [];
+  const providerFields = new Map();
+  let modelProvider, modelField, modelInputGroup, modelSuggestions, toggleModels, modelNote, refreshModels;
+  let discoveredModels = [];
+  let activeModelIndex = -1;
+  let providersToggle, providerPanels, customProviderList;
+  const builtinProviders = [
+    ['workers-ai', 'Workers AI', [
+      ['CLOUDFLARE_API_TOKEN', 'API token', 'password'],
+      ['CLOUDFLARE_ACCOUNT_ID', 'Account ID', 'text'],
+      ['FLAWRENCE_WORKERS_AI_BASE_URL', 'Endpoint override (optional)', 'url'],
+    ]],
+    ['openai', 'OpenAI Responses', [
+      ['OPENAI_API_KEY', 'API key', 'password'],
+      ['OPENCODE_ACCESS_TOKEN', 'opencode gateway token (instead of an API key)', 'password'],
+      ['FLAWRENCE_OPENAI_BASE_URL', 'Endpoint override (HTTPS, required with a gateway token)', 'url'],
+    ]],
+    ['anthropic', 'Anthropic', [
+      ['ANTHROPIC_API_KEY', 'API key', 'password'],
+      ['FLAWRENCE_ANTHROPIC_BASE_URL', 'Endpoint override (optional)', 'url'],
+    ]],
+  ];
+  const settings = [];
+  const settingDefinitions = [
+    ['MAX_ITERATIONS', 'Iterations', 50, 1000],
+    ['FLAWRENCE_WEB_MAX_EVENTS', 'Dashboard events', 25, 10000],
+    ['FLAWRENCE_AGENT_MEMORY_MB', 'Per-agent memory (MiB)', 256, 32768, 'No Memory Cap'],
+    ['FLAWRENCE_MAX_PARALLEL_AGENTS', 'Parallel agents', 1, 256],
+    ['MAX_TOKENS', 'Completion tokens', 2048, 524288],
+    ['MAX_CONTEXT_TOKENS', 'Per-agent context size', 57344, 1048576, 'No Context Cap'],
+    ['FLAWRENCE_MODEL', 'Model', 'text'],
+    ['TOKEN_COST_INPUT', 'Input · USD/1M tok'],
+    ['TOKEN_COST_CACHE_READ', 'Cache read · USD/1M tok'],
+    ['TOKEN_COST_OUTPUT', 'Output · USD/1M tok'],
+    ['FLAWRENCE_PREWARM_BUILD', 'Prewarm build', 'boolean'],
+    ['FLAWRENCE_WORKTREE_ISOLATION', 'Isolate worktrees', 'boolean'],
+  ];
+
+  function updateSubmit() {
+    form.querySelector('[type=submit]').disabled = !agentsValid || !environmentValid;
+  }
+
+  function buildControls(defaults) {
+    const container = document.querySelector('#env-controls');
+    for (const [key, title, min, max, noCap] of settingDefinitions) {
+      if (key === 'FLAWRENCE_MODEL') buildProviderEditor(container);
+      const row = document.createElement('div');
+      row.className = key === 'FLAWRENCE_MODEL' ? 'env-control model' : key.startsWith('TOKEN_COST_') ? 'env-control cost' : 'env-control';
+      const boolean = min === 'boolean';
+      const text = min === 'text';
+      row.innerHTML = `<label for="${key}">${title}<code>${key}</code></label>
+        <input id="${key}" type="${boolean ? 'checkbox' : text ? 'text' : 'number'}">
+        ${max ? `<input id="${key}-range" type="range" min="${min}" max="${max + (noCap ? 1 : 0)}" step="1" aria-label="${title}">` : ''}`;
+      if (key === 'FLAWRENCE_MODEL') {
+        row.innerHTML = `<div class="model-fields">
+          <div><label for="model-provider">Provider</label><select id="model-provider"></select></div>
+          <div><label for="FLAWRENCE_MODEL">Model identifier</label><div id="model-input-group" class="model-input">
+            <input id="FLAWRENCE_MODEL" type="text" role="combobox" aria-autocomplete="none" aria-expanded="false" aria-controls="model-suggestions" spellcheck="false">
+            <button id="toggle-models" type="button" aria-label="Show discovered models" title="Show discovered models" aria-haspopup="listbox" aria-expanded="false" aria-controls="model-suggestions" disabled>▾</button>
+            <div id="model-suggestions" role="listbox" aria-label="Discovered models" hidden></div>
+          </div></div>
+          <button id="refresh-models" type="button" title="Refresh models" aria-label="Refresh models" disabled><span aria-hidden="true">↻</span></button>
+          </div>
+          <small>Leave the model blank to use agent-defined models. Provider/model form the FLAWRENCE_MODEL override; textarea values take precedence.</small>
+          <small id="model-note" role="status" aria-live="polite"></small>`;
+        modelProvider = row.querySelector('#model-provider');
+        modelSuggestions = row.querySelector('#model-suggestions');
+        modelInputGroup = row.querySelector('#model-input-group');
+        toggleModels = row.querySelector('#toggle-models');
+        modelNote = row.querySelector('#model-note');
+        refreshModels = row.querySelector('#refresh-models');
+        renderModelSuggestions([]);
+        toggleModels.addEventListener('click', () => {
+          if (modelSuggestions.hidden) openModelSuggestions();
+          else closeModelSuggestions();
+        });
+        modelInputGroup.addEventListener('focusout', event => {
+          if (!modelInputGroup.contains(event.relatedTarget)) closeModelSuggestions();
+        });
+        modelProvider.addEventListener('input', clearModelSuggestions);
+        refreshModels.addEventListener('click', () => refreshModelSuggestions(true));
+      }
+      const field = row.querySelector('#' + key);
+      if (key === 'FLAWRENCE_MODEL') {
+        modelField = field;
+        field.addEventListener('keydown', modelKeydown);
+      }
+      const range = row.querySelector('input[type=range]');
+      if (!boolean && !text) {
+        field.min = max ? min : 0;
+        if (max) field.max = max;
+        field.step = max ? 1 : 'any';
+        field.required = Boolean(max);
+        if (!max) field.placeholder = 'Automatic pricing (opt)';
+      }
+      if (text) field.placeholder = 'Model ID, or leave blank for agent defaults';
+      const fallback = defaults[key] ?? (max ? min : '');
+      const syncRange = () => {
+        const uncapped = noCap && Number(range.value) > max;
+        field.type = uncapped ? 'text' : 'number';
+        field.readOnly = Boolean(uncapped);
+        field.value = uncapped ? noCap : range.value;
+        range.setAttribute('aria-valuetext', field.value);
+      };
+      settings.push({ key, field, range, noCap, boolean, text, min, max, fallback, syncRange });
+      field.addEventListener('input', () => {
+        if (key === 'FLAWRENCE_MODEL') closeModelSuggestions();
+        if (range) {
+          range.value = field.value;
+          range.setAttribute('aria-valuetext', field.value);
+        }
+      });
+      range?.addEventListener('input', syncRange);
+      container.append(row);
+    }
+  }
+
+  function buildProviderEditor(container) {
+    const editor = document.createElement('div');
+    editor.className = 'env-control providers';
+    editor.innerHTML = `<label><input id="show-providers" type="checkbox" aria-controls="provider-panels" aria-expanded="false">Configure providers</label>
+      <small>Complete configurations become available in the provider dropdown. Collapsing keeps connections configured. Clear optional endpoints to use the provider default.</small>
+      <div id="provider-panels" hidden></div>`;
+    providersToggle = editor.querySelector('#show-providers');
+    providerPanels = editor.querySelector('#provider-panels');
+    providersToggle.addEventListener('change', () => {
+      providerPanels.hidden = !providersToggle.checked;
+      providersToggle.setAttribute('aria-expanded', String(providersToggle.checked));
+    });
+    const custom = document.createElement('details');
+    custom.className = 'provider-panel';
+    custom.setAttribute('name', 'provider-panels');
+    custom.innerHTML = `<summary>OpenAI-compatible providers</summary><div id="custom-providers"></div>
+      <button id="add-provider" type="button">Add provider</button>
+      <small>Identifiers use letters and digits, starting with a letter. Built-in names are reserved. Endpoints are API roots, e.g. https://host.example/v1.</small>`;
+    customProviderList = custom.querySelector('#custom-providers');
+    custom.querySelector('#add-provider').addEventListener('click', () => addCustomProvider());
+    providerPanels.append(custom);
+    for (const [id, title, fields] of builtinProviders) {
+      const panel = document.createElement('details');
+      panel.className = 'provider-panel';
+      panel.setAttribute('name', 'provider-panels');
+      panel.innerHTML = `<summary>${title} · <span id="provider-status-${id}" class="provider-status">Not configured</span></summary>`
+        + fields.map(([key, label, type]) => `<label for="${key}">${label}<code>${key}</code></label><input id="${key}" type="${type === 'url' ? 'text' : type}" inputmode="${type === 'url' ? 'url' : 'text'}" spellcheck="false">`).join('')
+        + (id === 'workers-ai' ? '<small>Endpoint overrides apply to streaming mode; the existing batch client uses its standard endpoint.</small>' : '');
+      for (const [key] of fields) {
+        const field = panel.querySelector('#' + key);
+        providerFields.set(key, field);
+        field.addEventListener('input', clearModelSuggestions);
+      }
+      providerPanels.append(panel);
+    }
+    container.append(editor);
+  }
+
+  function addCustomProvider(identifier = '', endpoint = '', apiKey = '') {
+    const index = ++customProviderIndex;
+    const element = document.createElement('div');
+    element.className = 'custom-provider';
+    element.innerHTML = `<div class="provider-fields">
+      <div><label for="custom-${index}-id">Identifier</label><input id="custom-${index}-id" type="text" spellcheck="false"></div>
+      <div><label for="custom-${index}-url">Endpoint</label><input id="custom-${index}-url" type="text" inputmode="url" spellcheck="false"></div>
+      <div><label for="custom-${index}-key">API key</label><input id="custom-${index}-key" type="password"></div>
+      </div><small id="custom-${index}-status" class="provider-status" role="status">Incomplete</small>
+      <button id="custom-${index}-remove" type="button">Remove provider</button>`;
+    const row = { element, identifier: element.querySelector(`#custom-${index}-id`), endpoint: element.querySelector(`#custom-${index}-url`), key: element.querySelector(`#custom-${index}-key`), status: element.querySelector(`#custom-${index}-status`) };
+    row.identifier.value = identifier;
+    row.endpoint.value = endpoint;
+    row.key.value = apiKey;
+    for (const field of [row.identifier, row.endpoint, row.key]) field.addEventListener('input', clearModelSuggestions);
+    element.querySelector(`#custom-${index}-remove`).addEventListener('click', async () => {
+      customProviders.splice(customProviders.indexOf(row), 1);
+      element.remove();
+      clearModelSuggestions();
+      await updateEnvironmentPreview();
+      refreshModelSuggestions();
+    });
+    customProviders.push(row);
+    customProviderList.append(element);
+    return row;
+  }
+
+  function customProviderError() {
+    const identifiers = new Set();
+    for (const row of customProviders) {
+      const id = row.identifier.value.trim().toLowerCase();
+      if (!id && !row.endpoint.value && !row.key.value) continue;
+      if (!/^[a-z][a-z0-9]*$/.test(id) || ['anthropic', 'openai', 'workers-ai'].includes(id)) return 'Custom provider identifiers must start with a letter, contain only letters/digits, and avoid built-in names.';
+      if (identifiers.has(id)) return `Duplicate custom provider identifier: ${id}`;
+      identifiers.add(id);
+    }
+    return '';
+  }
+
+  function restoreProviders(controls) {
+    customProviders.length = 0;
+    customProviderList.replaceChildren();
+    for (const [key, field] of providerFields) field.value = controls[key] ?? '';
+    const names = new Set(Object.keys(controls).map(key => /^FLAWRENCE_PROVIDER_(.+)_(?:BASE_URL|API_KEY)$/.exec(key)?.[1]).filter(Boolean));
+    for (const name of [...names].sort()) addCustomProvider(name.toLowerCase(), controls[`FLAWRENCE_PROVIDER_${name}_BASE_URL`] ?? '', controls[`FLAWRENCE_PROVIDER_${name}_API_KEY`] ?? '');
+    clearModelSuggestions();
+  }
+
+  function selectModelProvider(id) {
+    if (![...modelProvider.options].some(option => option.value === id)) {
+      const option = new Option(id ? `Unavailable: ${id}` : 'Choose provider (optional)', id);
+      option.disabled = Boolean(id);
+      modelProvider.add(option);
+    }
+    modelProvider.value = id;
+  }
+
+  function renderProviders(providers) {
+    providerStatuses = providers;
+    const selected = modelProvider.value;
+    modelProvider.replaceChildren(new Option('Choose provider (optional)', ''), ...providers.filter(provider => provider.available).map(provider => new Option(provider.id, provider.id)));
+    selectModelProvider(selected);
+    for (const [id] of builtinProviders) {
+      const provider = providers.find(provider => !provider.custom && provider.id === id);
+      providerPanels.querySelector('#provider-status-' + id).textContent = provider?.available ? 'Available' : provider?.problem ?? 'Not configured';
+    }
+    for (const row of customProviders) {
+      const provider = providers.find(provider => provider.custom && provider.id === row.identifier.value.trim().toLowerCase());
+      row.status.textContent = provider?.available ? 'Available' : provider?.problem ?? 'Incomplete';
+    }
+    refreshModels.disabled = !providers.some(provider => provider.available && provider.custom && provider.id === selected);
+  }
+
+  function clearModelSuggestions() {
+    ++discoveryVersion;
+    discoverySignature = '';
+    if (modelSuggestions) renderModelSuggestions([]);
+    if (modelNote) modelNote.textContent = '';
+  }
+
+  function renderModelSuggestions(ids) {
+    closeModelSuggestions();
+    discoveredModels = ids;
+    modelSuggestions.replaceChildren(...ids.map((id, index) => {
+      const option = document.createElement('div');
+      option.id = 'model-option-' + index;
+      option.className = 'model-option';
+      option.textContent = id;
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+      option.addEventListener('mousedown', event => event.preventDefault());
+      option.addEventListener('click', () => selectDiscoveredModel(index));
+      return option;
+    }));
+    toggleModels.disabled = ids.length === 0;
+  }
+
+  function closeModelSuggestions() {
+    if (activeModelIndex >= 0) modelSuggestions.children[activeModelIndex]?.setAttribute('aria-selected', 'false');
+    activeModelIndex = -1;
+    modelSuggestions.hidden = true;
+    toggleModels.setAttribute('aria-expanded', 'false');
+    modelField?.setAttribute('aria-expanded', 'false');
+    modelField?.removeAttribute('aria-activedescendant');
+  }
+
+  function activateModel(index) {
+    if (activeModelIndex >= 0) modelSuggestions.children[activeModelIndex]?.setAttribute('aria-selected', 'false');
+    activeModelIndex = Math.max(0, Math.min(index, discoveredModels.length - 1));
+    const option = modelSuggestions.children[activeModelIndex];
+    option.setAttribute('aria-selected', 'true');
+    modelField.setAttribute('aria-activedescendant', option.id);
+    option.scrollIntoView({block: 'nearest'});
+  }
+
+  function openModelSuggestions(direction = 1) {
+    if (!discoveredModels.length || inputs.disabled || submitting) return;
+    modelSuggestions.hidden = false;
+    toggleModels.setAttribute('aria-expanded', 'true');
+    modelField.setAttribute('aria-expanded', 'true');
+    modelField.focus();
+    const current = discoveredModels.indexOf(modelField.value);
+    activateModel(current >= 0 ? current : direction < 0 ? discoveredModels.length - 1 : 0);
+  }
+
+  function selectDiscoveredModel(index) {
+    if (inputs.disabled || submitting || !discoveredModels[index]) return;
+    modelField.value = discoveredModels[index];
+    closeModelSuggestions();
+    modelField.focus();
+    updateEnvironmentPreview();
+  }
+
+  function modelKeydown(event) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (!discoveredModels.length) return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      if (modelSuggestions.hidden) openModelSuggestions(direction);
+      else activateModel(activeModelIndex + direction);
+    } else if (event.key === 'Enter' && !modelSuggestions.hidden) {
+      event.preventDefault();
+      selectDiscoveredModel(activeModelIndex);
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
+      if (event.key === 'Escape' && !modelSuggestions.hidden) event.preventDefault();
+      closeModelSuggestions();
+    }
+  }
+
+  document.addEventListener('mousedown', event => {
+    if (modelSuggestions && !event.target.closest('.model-input')) closeModelSuggestions();
+  });
+
+  async function refreshModelSuggestions(force = false) {
+    const id = modelProvider.value;
+    if (!providerStatuses.some(provider => provider.id === id && provider.available && provider.custom)) return;
+    const body = readEnvironment();
+    const prefix = 'FLAWRENCE_PROVIDER_' + id.toUpperCase();
+    const signature = JSON.stringify([id, body.controls[prefix + '_BASE_URL'], body.controls[prefix + '_API_KEY'], body.env]);
+    if (!force && signature === discoverySignature) return;
+    discoverySignature = signature;
+    const version = ++discoveryVersion;
+    renderModelSuggestions([]);
+    modelNote.textContent = 'Loading model suggestions…';
+    refreshModels.disabled = true;
+    try {
+      const ids = await request('models', { ...body, provider: id });
+      if (version !== discoveryVersion) return;
+      renderModelSuggestions(ids);
+      modelNote.textContent = ids.length ? `${ids.length} models discovered. You can also enter any model ID.` : 'No models discovered; enter a model ID manually.';
+    } catch (error) {
+      if (version !== discoveryVersion) return;
+      modelNote.textContent = error.message;
+    } finally {
+      if (version === discoveryVersion) refreshModels.disabled = false;
+    }
+  }
+
+  function envLine(key, value) {
+    return key + '="' + String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('$', '\\$').replaceAll('\n', '\\n') + '"\n';
+  }
+
+  function readEnvironment() {
+    const controls = {};
+    for (const { key, field, range, noCap, max, boolean, text } of settings) {
+      if (noCap && Number(range.value) > max) continue;
+      const value = text ? field.value.trim() : field.value;
+      if (boolean || value !== '') controls[key] = key === 'FLAWRENCE_MODEL' ? modelProvider.value + '/' + value : boolean ? String(field.checked) : value;
+    }
+    for (const [key, field] of providerFields) if (field.value !== '') controls[key] = field.value;
+    for (const row of customProviders) {
+      const id = row.identifier.value.trim().toUpperCase();
+      if (!/^[A-Z][A-Z0-9]*$/.test(id)) continue;
+      if (row.endpoint.value !== '') controls[`FLAWRENCE_PROVIDER_${id}_BASE_URL`] = row.endpoint.value;
+      if (row.key.value !== '') controls[`FLAWRENCE_PROVIDER_${id}_API_KEY`] = row.key.value;
+    }
+    return { env: environment.value, controls, manage_providers: true };
+  }
+
+  async function restoreEnvironment(input) {
+    if (!input.controls || !input.manage_providers) input = (await request('environment', input)).editor;
+    environment.value = input.env;
+    restoreProviders(input.controls);
+    for (const { key, field, range, noCap, boolean, text, min, max, fallback, syncRange } of settings) {
+      const raw = input.controls[key];
+      const value = raw?.trim();
+      const numeric = Number(value);
+      const truthy = ['1', 'true', 'yes', 'on'];
+      const falsy = ['0', 'false', 'no', 'off'];
+      const fits = value !== undefined && (text || (boolean
+        ? [...truthy, ...falsy].includes(value.toLowerCase())
+        : Number.isFinite(numeric) && (max
+          ? /^\+?\d+$/.test(value) && numeric >= min && numeric <= max
+          : /^[+\-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+\-]?\d+)?$/i.test(value) && numeric >= 0)));
+      if (boolean) field.checked = truthy.includes((fits ? value : String(fallback)).toLowerCase());
+      else if (text) field.value = raw ?? fallback;
+      else {
+        field.type = 'number';
+        field.readOnly = false;
+        field.value = fits ? String(numeric) : fallback;
+      }
+      if (range) {
+        range.value = noCap && !fits ? String(max + 1) : field.value;
+        syncRange();
+      }
+      if (key === 'FLAWRENCE_MODEL') {
+        const split = (raw ?? '').indexOf('/');
+        selectModelProvider(raw ? split < 0 ? 'workers-ai' : raw.slice(0, split) : '');
+        field.value = raw ? split < 0 ? raw : raw.slice(split + 1) : '';
+      }
+      // Preserve values the bounded controls cannot represent through the escape hatch.
+      if (raw !== undefined && !fits) environment.value += '\n' + envLine(key, raw);
+    }
+    await updateEnvironmentPreview();
+    refreshModelSuggestions();
+  }
+
+  async function updateEnvironmentPreview() {
+    clearTimeout(previewTimer);
+    const version = ++previewVersion;
+    environmentValid = false;
+    effectiveEnvironment.value = '';
+    environmentNote.textContent = 'Updating environment…';
+    updateSubmit();
+    try {
+      const preview = await request('environment', readEnvironment());
+      if (version !== previewVersion) return;
+      effectiveEnvironment.value = preview.effective;
+      renderProviders(preview.providers ?? []);
+      environmentNote.textContent = customProviderError() || preview.model_error || '';
+      environmentValid = !environmentNote.textContent;
+    } catch (error) {
+      if (version !== previewVersion) return;
+      environmentNote.textContent = error.message;
+    }
+    updateSubmit();
+  }
+
+  document.querySelector('#environment-section').addEventListener('input', () => {
+    ++previewVersion;
+    environmentValid = false;
+    effectiveEnvironment.value = '';
+    environmentNote.textContent = 'Updating environment…';
+    updateSubmit();
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(updateEnvironmentPreview, 150);
+  });
+  document.querySelector('#environment-section').addEventListener('change', async () => {
+    await updateEnvironmentPreview();
+    refreshModelSuggestions();
+  });
+  environment.addEventListener('input', clearModelSuggestions);
+
+  async function request(path, body) {
+    const response = await fetch('/launcher/' + path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Flawrence-Launcher': '1' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  }
+
+  async function loadAgents(selected = agent.value) {
+    const names = await request('agents', readEnvironment());
+    agent.replaceChildren(...names.map(name => new Option(name, name)));
+    agent.value = names.includes(selected) ? selected : names.includes('security-review') ? 'security-review' : names[0];
+    agentsValid = true;
+    updateSubmit();
+  }
+
+  async function render(state) {
+    inputs.disabled = state.running || submitting;
+    if (inputs.disabled && modelSuggestions) closeModelSuggestions();
+    updateSubmit();
+    interrupt.disabled = !state.running;
+    const dashboardEnabled = state.input?.web_ui !== false;
+    dashboard.hidden = !state.running || !dashboardEnabled;
+    if (state.url) dashboard.href = state.url;
+    message.textContent = state.running
+      ? (!dashboardEnabled ? 'Flawrence is running. Dashboard disabled.' : state.ready ? 'Flawrence is running. Dashboard ready.' : 'Flawrence is initializing…') + ' Ctrl+C sent: ' + state.interrupts + '.'
+      : state.url ? 'Flawrence exited (code ' + (state.exit_code ?? 'signal') + '). Ready for another run.' : 'Ready.';
+    if (state.log) message.textContent += '\nRunner output: ' + state.log;
+    if (state.input && state.url !== restoredRunUrl) {
+      const input = state.input;
+      document.querySelector('#directory').value = input.directory;
+      document.querySelector('#artifacts').value = input.artifacts;
+      document.querySelector('#query').value = input.query;
+      webUi.checked = input.web_ui !== false;
+      await restoreEnvironment(input);
+      agent.replaceChildren(new Option(input.agent, input.agent));
+      restoredRunUrl = state.url;
+      try { await loadAgents(input.agent); }
+      catch (error) { agentsValid = false; message.textContent += '\n' + error.message; }
+      // Keep the original selection visible even if its definition was removed.
+      if (agent.value !== input.agent) agent.add(new Option(input.agent, input.agent));
+      agent.value = input.agent;
+      updateSubmit();
+    }
+  }
+
+  async function poll() {
+    if (polling || submitting) return;
+    polling = true;
+    try { await render(await request('status')); }
+    catch (error) { inputs.disabled = true; interrupt.disabled = true; message.textContent = error.message; }
+    finally { polling = false; }
+  }
+
+  async function pollLog() {
+    if (logPolling) return;
+    logPolling = true;
+    try {
+      const tail = await request('log');
+      const top = outputLog.scrollTop;
+      const left = outputLog.scrollLeft;
+      const follow = logRunId !== tail.run_id
+        || outputLog.scrollHeight - top - outputLog.clientHeight <= 20;
+      if (outputLog.value !== tail.text) {
+        outputLog.value = tail.text;
+        outputLog.scrollTop = follow ? outputLog.scrollHeight : top;
+        outputLog.scrollLeft = left;
+      }
+      logRunId = tail.run_id;
+      logNote.textContent = tail.truncated
+        ? 'Output clipped to the last 1 MiB; fewer than 1,000 complete lines may be visible.'
+        : '';
+    } catch (error) { logNote.textContent = error.message; }
+    finally { logPolling = false; }
+  }
+
+  environment.addEventListener('change', async () => {
+    try { await loadAgents(); await poll(); }
+    catch (error) { agentsValid = false; form.querySelector('[type=submit]').disabled = true; message.textContent = error.message; }
+  });
+
+  function finishLaunchAnimation() {
+    if (!launchAnimation) return;
+    const {timer, resolve} = launchAnimation;
+    launchAnimation = null;
+    clearTimeout(timer);
+    launchEffect.hidden = true;
+    form.classList.remove('launching');
+    resolve();
+  }
+
+  function playLaunchAnimation() {
+    finishLaunchAnimation();
+    launchEffect.hidden = false;
+    form.classList.add('launching');
+    // The card occupies three seconds between two brief launcher-only glitches.
+    return new Promise(resolve => {
+      launchAnimation = {resolve, timer: setTimeout(finishLaunchAnimation, 3900)};
+    });
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (submitting) return;
+    const body = Object.fromEntries(new FormData(form));
+    body.web_ui = webUi.checked;
+    Object.assign(body, readEnvironment());
+    submitting = true;
+    inputs.disabled = true;
+    closeModelSuggestions();
+    try {
+      const starting = request('start', body);
+      const animation = playLaunchAnimation();
+      const state = await starting;
+      await animation;
+      // Open the dashboard itself after the effect; the launcher link remains the popup fallback.
+      if (body.web_ui && state.url) window.open(state.url, '_blank', 'noopener');
+      submitting = false;
+      await render(state);
+    } catch (error) {
+      finishLaunchAnimation();
+      submitting = false;
+      await poll();
+      message.textContent = error.message;
+    } finally {
+      finishLaunchAnimation();
+    }
+  });
+
+  let interrupts = Promise.resolve();
+  interrupt.addEventListener('click', () => {
+    // Keep every click, including clicks made while the preceding request is pending.
+    interrupts = interrupts.catch(() => {}).then(async () => {
+      try { await render(await request('interrupt', {})); }
+      catch (error) { message.textContent = error.message; }
+    });
+  });
+
+  (async () => {
+    try {
+      const defaults = await request('defaults');
+      buildControls(defaults.control_defaults);
+      await restoreEnvironment(defaults);
+      document.querySelector('#directory').value = defaults.directory;
+      document.querySelector('#artifacts').value = defaults.artifacts;
+      await poll();
+      if (!restoredRunUrl) { await loadAgents(); await poll(); }
+    } catch (error) { inputs.disabled = false; message.textContent = error.message; }
+    setInterval(poll, 1500);
+    pollLog();
+    setInterval(pollLog, 1000);
+  })();
+</script>
+</html>

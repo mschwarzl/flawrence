@@ -1,0 +1,12 @@
+/target
+.env
+*.swp
+*.swo
+*~
+.DS_Store
+artifacts*
+/flawrence-runner
+# Flawrence writes this in the working directory on an invalid model response.
+errors.log
+*.log
+/plans
