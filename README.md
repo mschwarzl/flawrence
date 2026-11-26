@@ -17,7 +17,10 @@ The bugs Flawrence has found so far are listed in [FINDINGS.md](FINDINGS.md).
 > Agents run shell commands, build the target and execute proofs of concept.
 > Run Flawrence in a container or a VM. Never point it at a machine you care about.
 > A full review fans out to many agents and can cost a lot of tokens. Set `MAX_COST_USD`.
-> We recommend, running flawrence with locally hosted open-weight models to get the maximum out of it.
+> Frontier models give the best results, but their APIs are expensive and not available to everyone.
+> Self-hosted open-weight models without refusals are the cheaper alternative.
+> We made very good findings with Qwen, GLM, DeepSeek and Kimi models, rivalling frontier model performance wrt. discovering vulnerabilities, often at a fraction of the cost.  
+> In addition, without access to Project Glasswing, Daybreak Red, or similar programmes, frontier models will often outright refuse to look for vulnerabilities, let alone provide proof-of-concept exploits, even though those are crucial when it comes to validating a claimed finding.
 
 ## Quickstart
 
@@ -249,6 +252,10 @@ Contributors and coding agents should read [AGENTS.md](AGENTS.md) first.
 ```sh
 cargo fmt --all && cargo clippy --workspace && cargo test --workspace
 ```
+
+## Talks
+
+- [Automated Vulnerability Hunting with LLMs at Scale](docs/talks/security-week-graz-2026.pdf). Security Week Graz, 2026-09-14 (no recording; slides only).
 
 ## License
 
