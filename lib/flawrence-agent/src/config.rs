@@ -623,6 +623,17 @@ impl AgentRegistry {
         }
     }
 
+    /// Override the model for specific agents by name. Unknown names warn
+    /// instead of failing the run, so a renamed agent does not block startup.
+    pub fn apply_agent_model_overrides(&mut self, overrides: &[(String, String)]) {
+        for (name, model) in overrides {
+            match self.agents.get_mut(name) {
+                Some(agent) => agent.model = model.clone(),
+                None => eprintln!("Warning: --agent-model references unknown agent '{name}'"),
+            }
+        }
+    }
+
     /// Get an agent by name
     pub fn get(&self, name: &str) -> Result<&AgentConfig> {
         self.agents.get(name).ok_or_else(|| {
