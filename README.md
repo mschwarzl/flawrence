@@ -19,10 +19,8 @@ The bugs Flawrence has found so far are listed in [FINDINGS.md](FINDINGS.md).
 > A full review fans out to many agents and can cost a lot of tokens. Set `MAX_COST_USD`.
 > Frontier models give the best results, but their APIs are expensive and not available to everyone.
 > Self-hosted open-weight models without refusals are the cheaper alternative.
-> We made very good findings with Qwen, GLM, DeepSeek and Kimi models.
-> They rival frontier models at finding vulnerabilities, often at a fraction of the cost.
-> Without access to programs such as Project Glasswing or Daybreak Red, frontier models often refuse to look for vulnerabilities.
-> They also refuse to write proofs of concept, which are crucial to validate a finding.
+> We made very good findings with Qwen, GLM, DeepSeek and Kimi models, rivalling frontier model performance wrt. discovering vulnerabilities, often at a fraction of the cost.  
+> In addition, without access to Project Glasswing, Daybreak Red, or similar programmes, frontier models will often outright refuse to look for vulnerabilities, let alone provide proof-of-concept exploits, even though those are crucial when it comes to validating a claimed finding.
 
 ## Quickstart
 
@@ -257,7 +255,7 @@ cargo fmt --all && cargo clippy --workspace && cargo test --workspace
 
 ## Talks
 
-- [Automated Vulnerability Hunting with LLMs at Scale](docs/talks/security-week-graz-2026.pdf). Security Week Graz, 2026-09-14. Slides only, there is no recording.
+- [Automated Vulnerability Hunting with LLMs at Scale](docs/talks/security-week-graz-2026.pdf). Security Week Graz, 2026-09-14 (no recording; slides only).
 
 ## License
 
