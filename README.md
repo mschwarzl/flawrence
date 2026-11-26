@@ -250,6 +250,10 @@ Contributors and coding agents should read [AGENTS.md](AGENTS.md) first.
 cargo fmt --all && cargo clippy --workspace && cargo test --workspace
 ```
 
+## Talks
+
+- [Automated Vulnerability Hunting with LLMs at Scale](docs/talks/security-week-graz-2026.pdf). Security Week Graz, 2026-09-14.
+
 ## License
 
 Flawrence is licensed under the [MIT license](LICENSE).
