@@ -5,6 +5,11 @@ use flawrence_chat::{ChatOptions, ChatRequest, ChatResponse};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Model-id prefixes that always route to a built-in client. A custom
+/// `FLAWRENCE_PROVIDER_*` provider must not use one of these names: the
+/// built-in credentials would silently serve its requests instead.
+pub const BUILTIN_MODEL_PREFIXES: &[&str] = &["anthropic/", "openai/", "workers-ai/"];
+
 pub struct RoutingClient {
     pub anthropic: Option<Arc<dyn ChatClient>>,
     pub openai: Option<Arc<dyn ChatClient>>,
@@ -43,11 +48,12 @@ impl RoutingClient {
     }
 
     fn route(&self, model: &str) -> Result<&Arc<dyn ChatClient>> {
-        const PREFIXES: &[&str] = &["anthropic/", "openai/", "workers-ai/"];
-        for prefix in PREFIXES {
+        for prefix in BUILTIN_MODEL_PREFIXES {
             if let Some(remainder) = model.strip_prefix(prefix)
                 && (remainder.is_empty()
-                    || PREFIXES.iter().any(|nested| remainder.starts_with(nested)))
+                    || BUILTIN_MODEL_PREFIXES
+                        .iter()
+                        .any(|nested| remainder.starts_with(nested)))
             {
                 bail!("Model must have exactly one provider prefix and a non-empty id: {model}");
             }
