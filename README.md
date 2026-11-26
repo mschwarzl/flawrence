@@ -17,7 +17,8 @@ The bugs Flawrence has found so far are listed in [FINDINGS.md](FINDINGS.md).
 > Agents run shell commands, build the target and execute proofs of concept.
 > Run Flawrence in a container or a VM. Never point it at a machine you care about.
 > A full review fans out to many agents and can cost a lot of tokens. Set `MAX_COST_USD`.
-> We recommend, running flawrence with locally hosted open-weight models to get the maximum out of it.
+> Frontier models give the best results.
+> Self-hosted open-weight models without refusals are the alternative. They cost much less per finding.
 
 ## Quickstart
 
