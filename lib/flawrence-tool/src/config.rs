@@ -159,8 +159,15 @@ impl Config {
             let Some(rest) = key.strip_prefix("FLAWRENCE_PROVIDER_") else {
                 continue;
             };
-            let Some((name, field)) = rest.split_once('_') else {
-                continue;
+            // Env vars cannot hold a dash, so the built-in `workers-ai` name
+            // is spelled `WORKERS_AI_*`; every other name splits on the first
+            // underscore.
+            let (name, field) = match rest.strip_prefix("WORKERS_AI_") {
+                Some(field) => ("workers-ai", field),
+                None => match rest.split_once('_') {
+                    Some(split) => split,
+                    None => continue,
+                },
             };
             let name = name.to_lowercase();
             let entry = providers.entry(name).or_default();
@@ -171,6 +178,20 @@ impl Config {
             }
         }
         providers.retain(|_, p| !p.base_url.is_empty() && !p.api_key.is_empty());
+
+        // A custom provider named like a built-in prefix is silently shadowed
+        // by the built-in client, so the env vars look set but are never used.
+        // The list comes from the router so the warning cannot drift from what
+        // actually gets shadowed.
+        for prefix in flawrence_api::routing::BUILTIN_MODEL_PREFIXES {
+            let name = prefix.trim_end_matches('/');
+            if providers.contains_key(name) {
+                eprintln!(
+                    "Warning: FLAWRENCE_PROVIDER_{}_* is ignored: '{name}' is a built-in provider prefix; rename the provider (e.g. '{name}-custom')",
+                    name.to_uppercase()
+                );
+            }
+        }
 
         Ok(Config {
             cf_api_token,
