@@ -52,6 +52,11 @@ struct Cli {
     #[arg(short, long)]
     model: Option<String>,
 
+    /// Override the model for one agent (can be repeated). Format: agent=provider/model
+    /// Applied after the global --model override.
+    #[arg(long = "agent-model", value_parser = parse_key_value)]
+    agent_models: Vec<(String, String)>,
+
     #[arg(long)]
     plain: bool,
 
@@ -242,6 +247,13 @@ async fn main() -> Result<()> {
     if let Some(model) = &config.model_override {
         agents.apply_model_override(model);
         eprintln!("Model override: {model}");
+    }
+
+    if !cli.agent_models.is_empty() {
+        agents.apply_agent_model_overrides(&cli.agent_models);
+        for (name, model) in &cli.agent_models {
+            eprintln!("Agent model override: {name} -> {model}");
+        }
     }
 
     let schedule = cli
