@@ -19,6 +19,7 @@ The bugs Flawrence has found so far are listed in [FINDINGS.md](FINDINGS.md).
 > A full review fans out to many agents and can cost a lot of tokens. Set `MAX_COST_USD`.
 > Frontier models give the best results, but their APIs are expensive and not available to everyone.
 > Self-hosted open-weight models without refusals are the cheaper alternative.
+> We made very good findings with Qwen, GLM, DeepSeek and Kimi models.
 
 ## Quickstart
 
