@@ -14,6 +14,7 @@ If Flawrence found a bug in your project, please open a pull request and add it 
 - [GHSA-8m3x-xjm3-w8xv](https://github.com/a-sit-plus/vck/security/advisories/GHSA-8m3x-xjm3-w8xv). OID4VCI credential request replay. The proof of possession nonce is verified but not consumed.
 - [GHSA-85fc-jv65-v886](https://github.com/a-sit-plus/vck/security/advisories/GHSA-85fc-jv65-v886). OpenID4VP presentation response replay. The authentication request and its nonce are not consumed.
 - [GHSA-62h6-459f-h72j](https://github.com/a-sit-plus/vck/security/advisories/GHSA-62h6-459f-h72j). SD-JWT strict verification gaps. Duplicate claims, unreferenced disclosures and missing KB-JWT `iat` and `typ` checks are accepted.
+- Various other fixes delivered on in-development features by running Flawrence before preparing a release
 
 ## a-sit-plus/warden-supreme
 
@@ -35,7 +36,7 @@ If Flawrence found a bug in your project, please open a pull request and add it 
 
 - [GHSA-48c5-x28r-fff9](https://github.com/a-sit-plus/awesn1/security/advisories/GHSA-48c5-x28r-fff9). Quadratic time when converting large ASN.1 INTEGER and OID values to decimal.
 - [GHSA-q34j-33q7-fw9h](https://github.com/a-sit-plus/awesn1/security/advisories/GHSA-q34j-33q7-fw9h). Quadratic time and memory when parsing nested encapsulating OCTET STRINGs.
-- Multiple other findings assessed as not being security-critical being addressed through regular pull requests.
+- Literally dozens of other findings assessed as not being security-critical being addressed through regular pull requests.
 
 ## vercel-labs/just-bash
 
