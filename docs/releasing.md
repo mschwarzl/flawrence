@@ -14,6 +14,7 @@ Start the title with a verb in the imperative.
 | First word | Changelog section |
 | --- | --- |
 | Add | Added |
+| Deprecate | Deprecated |
 | Remove, Drop, Delete | Removed |
 | Fix, Correct | Fixed |
 | Security | Security |

@@ -39,6 +39,7 @@ commit_preprocessors = [
 commit_parsers = [
   { message = '^(?i)(add changelog|add a changelog|release|bump version|merge )', skip = true },
   { message = '^(?i)add', group = "<!-- 0 -->Added" },
+  { message = '^(?i)deprecate', group = "<!-- 2 -->Deprecated" },
   { message = '^(?i)(remove|drop|delete)', group = "<!-- 3 -->Removed" },
   { message = '^(?i)(fix|correct)', group = "<!-- 4 -->Fixed" },
   { message = '^(?i)security', group = "<!-- 5 -->Security" },
