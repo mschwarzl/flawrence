@@ -36,6 +36,7 @@ flawrence-runner --agent <name> --directory <path> "<query>"
 ```
 
 Every environment variable is documented in `docs/configuration.md`.
+The release process is in `docs/releasing.md`.
 Update that file when you add or change one.
 
 ## Provider API compatibility

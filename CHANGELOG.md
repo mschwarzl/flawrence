@@ -4,9 +4,7 @@ This file lists notable changes to Flawrence.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-## [0.1.0] - 2026-11-27
+## [0.1.0](https://github.com/mschwarzl/flawrence/releases/tag/v0.1.0) - 2026-11-27
 
 The first public release.
 
@@ -25,5 +23,3 @@ The first public release.
 - [FINDINGS.md](FINDINGS.md) with the vulnerabilities found so far, and reports past the 90 day deadline under [disclosures](disclosures).
 - The slides of the Security Week Graz 2026 talk.
 
-[Unreleased]: https://github.com/mschwarzl/flawrence/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/mschwarzl/flawrence/releases/tag/v0.1.0

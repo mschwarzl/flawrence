@@ -1,0 +1,48 @@
+# git-cliff configuration. It writes CHANGELOG.md in the Keep a Changelog format.
+# Commits do not use Conventional Commits, so they are grouped by their first word.
+# See docs/releasing.md.
+
+[changelog]
+header = """
+# Changelog
+
+This file lists notable changes to Flawrence.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions follow [Semantic Versioning](https://semver.org/).
+"""
+body = """
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}](https://github.com/mschwarzl/flawrence/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## Unreleased
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+
+{% for commit in commits -%}
+- {{ commit.message | split(pat="\n") | first | trim }}
+{% endfor -%}
+{% endfor %}
+"""
+footer = ""
+trim = false
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+protect_breaking_commits = false
+# Link the PR number at the end of a squash merge subject.
+commit_preprocessors = [
+  { pattern = '(?m)\(#(\d+)\)$', replace = "([#${1}](https://github.com/mschwarzl/flawrence/pull/${1}))" },
+]
+# The first matching rule wins. The <!-- n --> prefix only sets the order of the groups.
+commit_parsers = [
+  { message = '^(?i)(add changelog|add a changelog|release|bump version|merge )', skip = true },
+  { message = '^(?i)add', group = "<!-- 0 -->Added" },
+  { message = '^(?i)(remove|drop|delete)', group = "<!-- 3 -->Removed" },
+  { message = '^(?i)(fix|correct)', group = "<!-- 4 -->Fixed" },
+  { message = '^(?i)security', group = "<!-- 5 -->Security" },
+  { message = '.*', group = "<!-- 1 -->Changed" },
+]
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
