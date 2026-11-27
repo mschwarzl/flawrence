@@ -1200,8 +1200,16 @@ impl TaskLoop {
                 .ok()
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(50);
+            // Rate-limit retries get their own streak counter and backoff cap:
+            // a fan-out of parallel agents can trip a provider limit all at once,
+            // and the generic wall-clock cap (30 min) is far too long to wait
+            // out. Both are read once in `Config` so a bad value warns at
+            // startup instead of being silently ignored on every call.
+            let rate_limit_backoff_cap_secs = self.runtime.config.rate_limit_backoff_cap_secs;
+            let max_rate_limit_retries = self.runtime.config.max_rate_limit_retries;
             let retry_started = std::time::Instant::now();
             let mut attempt = 0;
+            let mut rate_limit_streak = 0u32;
             let mut billing_unknown_retries = 0u32;
             let mut empty_response_count = 0;
             let mut unbilled_empty_count = 0u32;
@@ -1445,13 +1453,14 @@ impl TaskLoop {
                         let is_rate_limit = msg.contains("rate limit")
                             || msg.contains("429")
                             || msg.contains("too many requests");
-                        let backoff_secs = if is_rate_limit {
-                            // 30s, 60s, 120s (cap).
-                            std::cmp::min(30 * 2_u64.pow((attempt - 1).min(2)), 120)
-                        } else {
-                            // 2s, 4s, 8s, 16s (cap).
-                            std::cmp::min(2 * 2_u64.pow((attempt - 1).min(3)), 16)
-                        };
+                        let backoff_secs = next_backoff_secs(
+                            &mut rate_limit_streak,
+                            is_rate_limit,
+                            max_rate_limit_retries,
+                            rate_limit_backoff_cap_secs,
+                            attempt,
+                        )
+                        .map_err(|err| anyhow::anyhow!("{err:#}: {e}"))?;
                         // Cheap, dependency-free jitter (0-999ms) so parallel tasks
                         // do not retry in lockstep after a shared upstream blip.
                         let jitter_ms = std::time::SystemTime::now()
@@ -2272,6 +2281,45 @@ async fn beat_while<F: std::future::Future>(
 
 const RETRY_WALL_CLOCK_LIMIT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
+/// Advance the rate-limit streak after a failed call and return the backoff
+/// in seconds. Rate limits keep their own streak counter and cap so a
+/// provider outage fails the call after a bounded wait instead of sitting
+/// out the wall-clock limit; the streak resets on any non-rate-limit
+/// outcome. Other transient errors retry quickly (2s..16s) to avoid wasting
+/// the iteration budget on long sleeps.
+///
+/// `attempt` is the overall attempt number of the retry loop (1-based).
+fn next_backoff_secs(
+    streak: &mut u32,
+    is_rate_limit: bool,
+    max_rate_limit_retries: u64,
+    cap_secs: u64,
+    attempt: u64,
+) -> anyhow::Result<u64> {
+    if is_rate_limit {
+        *streak = streak.saturating_add(1);
+        if u64::from(*streak) > max_rate_limit_retries {
+            anyhow::bail!(
+                "Rate limited {streak} times in a row (cap \
+                 FLAWRENCE_MAX_RATE_LIMIT_RETRIES={max_rate_limit_retries}); \
+                 giving up on this call"
+            );
+        }
+        // 30s, 60s, then the configurable cap.
+        Ok(std::cmp::min(
+            30 * 2_u64.pow(u32::try_from(attempt.saturating_sub(1)).unwrap_or(0).min(2)),
+            cap_secs,
+        ))
+    } else {
+        *streak = 0;
+        // 2s, 4s, 8s, 16s (cap).
+        Ok(std::cmp::min(
+            2 * 2_u64.pow(u32::try_from(attempt.saturating_sub(1)).unwrap_or(0).min(3)),
+            16,
+        ))
+    }
+}
+
 const EMPTY_NUDGE_PREFIX: &str = "Your last response was empty";
 
 fn empty_response_nudge(
@@ -2375,7 +2423,56 @@ fn rejected_tool_message(agent: &str, tool: &str, allowed: &[String], exists: bo
 
 #[cfg(test)]
 mod tests {
-    use super::{edit_distance, nearest_enum_value};
+    use super::{edit_distance, nearest_enum_value, next_backoff_secs};
+
+    /// The streak gives up only after more than the cap of consecutive 429s,
+    /// resets on any other error class, and the backoff is 30s/60s then the
+    /// configured cap — not a value that keeps growing for the whole outage.
+    #[test]
+    fn rate_limit_backoff_caps_the_streak_and_resets_on_other_errors() {
+        let mut streak = 0;
+        assert_eq!(
+            next_backoff_secs(&mut streak, true, 10, 120, 1).unwrap(),
+            30
+        );
+        assert_eq!(
+            next_backoff_secs(&mut streak, true, 10, 120, 2).unwrap(),
+            60
+        );
+        assert_eq!(
+            next_backoff_secs(&mut streak, true, 10, 120, 3).unwrap(),
+            120
+        );
+        assert_eq!(
+            next_backoff_secs(&mut streak, true, 10, 120, 4).unwrap(),
+            120
+        );
+        assert_eq!(streak, 4);
+
+        // A non-429 error ends the streak.
+        assert_eq!(
+            next_backoff_secs(&mut streak, false, 10, 120, 5).unwrap(),
+            16
+        );
+        assert_eq!(streak, 0);
+
+        // ...and a fresh streak counts from one again. The backoff follows
+        // the overall attempt number, not the streak, so it stays at the cap.
+        assert_eq!(
+            next_backoff_secs(&mut streak, true, 10, 120, 6).unwrap(),
+            120
+        );
+        assert_eq!(streak, 1);
+
+        // The 10th consecutive rate limit is still retried...
+        let mut streak = 9;
+        assert!(next_backoff_secs(&mut streak, true, 10, 120, 10).is_ok());
+        // ...while the 11th gives up instead of waiting out the 30-minute
+        // wall-clock limit.
+        let mut streak = 10;
+        let err = next_backoff_secs(&mut streak, true, 10, 120, 11).unwrap_err();
+        assert!(err.to_string().contains("Rate limited 11 times in a row"));
+    }
 
     /// The exact enum slips observed in run 9's rejected submission. Each is a
     /// near-miss the model cannot fix from its own output alone.

@@ -15,6 +15,8 @@ use futures::StreamExt;
 use reqwest_compat::header::{HeaderMap, HeaderValue, USER_AGENT};
 use secrecy::SecretString;
 use serde_json::{Value, json};
+use std::collections::HashSet;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const OPENAI_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -165,318 +167,44 @@ pub enum OpenAiAuth {
 pub struct StreamingClient {
     client: Client<Box<dyn OpenAIClientConfig>>,
     provider: StreamingProvider,
+    /// Model ids whose provider permanently rejected `reasoning_effort`. The
+    /// field is omitted for them from the first request on, so a known-bad
+    /// model does not pay a failing request on every call.
+    effort_rejected: Mutex<HashSet<String>>,
 }
 
 impl StreamingClient {
-    /// Create a new streaming client for Workers AI. With `base_url_override`,
-    /// `account_id` is ignored and the override is used verbatim.
-    pub fn new(
-        api_token: String,
-        account_id: String,
-        base_url_override: Option<String>,
-    ) -> Result<Self> {
-        let base_url = base_url_override.unwrap_or_else(|| {
-            format!(
-                "https://api.cloudflare.com/client/v4/accounts/{}/ai/v1",
-                account_id
-            )
-        });
-
-        let config = OpenAIConfig::new()
-            .with_api_base(base_url)
-            .with_api_key(api_token)
-            .with_header("User-Agent", crate::USER_AGENT)?;
-
-        let http_client = reqwest_compat::Client::builder()
-            .connect_timeout(OPENAI_CONNECT_TIMEOUT)
-            .timeout(OPENAI_REQUEST_TIMEOUT)
-            .build()
-            .context("Failed to create Workers AI HTTP client")?;
-        let client = Client::with_config(Box::new(config) as Box<dyn OpenAIClientConfig>)
-            .with_http_client(http_client);
-
-        Ok(Self {
-            client,
-            provider: StreamingProvider::WorkersAi,
-        })
+    /// Whether the provider already permanently rejected `reasoning_effort`
+    /// for this model.
+    fn effort_rejected(&self, model: &str) -> bool {
+        self.effort_rejected
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(model)
     }
 
-    /// Create a generic OpenAI-compatible streaming client from an explicit
-    /// base URL and API key. Used for custom/self-hosted providers routed via
-    /// the standard `POST /v1/chat/completions` endpoint.
-    pub fn from_url(api_key: String, base_url: String) -> Result<Self> {
-        let provider = if is_mistral_base_url(&base_url) {
-            StreamingProvider::Mistral
-        } else {
-            StreamingProvider::SelfHosted
-        };
-        let config = OpenAIConfig::new()
-            .with_api_base(base_url)
-            .with_api_key(api_key)
-            .with_header("User-Agent", crate::USER_AGENT)?;
-
-        let http_client = reqwest_compat::Client::builder()
-            .connect_timeout(OPENAI_CONNECT_TIMEOUT)
-            .timeout(OPENAI_REQUEST_TIMEOUT)
-            .build()
-            .context("Failed to create self-hosted provider HTTP client")?;
-        let client = Client::with_config(Box::new(config) as Box<dyn OpenAIClientConfig>)
-            .with_http_client(http_client);
-
-        Ok(Self { client, provider })
+    /// Record a model whose provider permanently rejected `reasoning_effort`,
+    /// so every later call omits the field from the start.
+    fn remember_effort_rejected(&self, model: &str) {
+        self.effort_rejected
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(model.to_string());
     }
 
-    /// Create a streaming client for the OpenAI Responses API.
-    ///
-    /// An API key talks to `https://api.openai.com/v1` unless `base_url_override`
-    /// is set. An opencode gateway token has no default endpoint, so it needs
-    /// `base_url_override`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the endpoint is missing for a gateway token, is not an
-    /// HTTPS URL, or carries a query or fragment.
-    pub fn new_openai(auth: OpenAiAuth, base_url_override: Option<String>) -> Result<Self> {
-        let raw_base_url = match (&auth, base_url_override) {
-            (_, Some(url)) => url,
-            (OpenAiAuth::ApiKey(_), None) => DEFAULT_OPENAI_BASE_URL.to_string(),
-            (OpenAiAuth::OpencodeToken(_), None) => {
-                anyhow::bail!("OPENCODE_ACCESS_TOKEN needs FLAWRENCE_OPENAI_BASE_URL")
-            }
-        };
-        let parsed_base_url = reqwest_compat::Url::parse(&raw_base_url)
-            .context("FLAWRENCE_OPENAI_BASE_URL is not a valid URL")?;
-        anyhow::ensure!(
-            parsed_base_url.scheme() == "https",
-            "FLAWRENCE_OPENAI_BASE_URL must use HTTPS"
-        );
-        anyhow::ensure!(
-            parsed_base_url.query().is_none() && parsed_base_url.fragment().is_none(),
-            "FLAWRENCE_OPENAI_BASE_URL cannot contain a query or fragment"
-        );
-        let base_url = parsed_base_url.as_str().trim_end_matches('/').to_string();
-        let config: Box<dyn OpenAIClientConfig> = match auth {
-            OpenAiAuth::ApiKey(key) => Box::new(
-                OpenAIConfig::new()
-                    .with_api_base(base_url)
-                    .with_api_key(key)
-                    .with_header("User-Agent", crate::USER_AGENT)?,
-            ),
-            OpenAiAuth::OpencodeToken(token) => Box::new(OpencodeConfig::new(base_url, token)?),
-        };
-        let http_client = reqwest_compat::Client::builder()
-            .redirect(reqwest_compat::redirect::Policy::none())
-            .connect_timeout(OPENAI_CONNECT_TIMEOUT)
-            .timeout(OPENAI_REQUEST_TIMEOUT)
-            .build()
-            .context("Failed to create OpenAI HTTP client")?;
-        let client = Client::with_config(config).with_http_client(http_client);
-
-        Ok(Self {
-            client,
-            provider: StreamingProvider::OpenAi,
-        })
-    }
-
-    async fn responses_completion(
+    /// One attempt at the chat-completions path: build the request body, open
+    /// the SSE stream and accumulate it into a [`ChatResponse`]. Split from
+    /// [`StreamingClient::chat_completion`] so the `reasoning_effort` fallback
+    /// can rerun the attempt with the field dropped.
+    async fn chat_attempt(
         &self,
+        request_model: &str,
         model: &str,
         request: &ChatRequest,
         options: Option<&ChatOptions>,
+        skip_effort: bool,
     ) -> Result<ChatResponse> {
-        let request_model = strip_model_prefix(model, self.provider);
-        let body = build_responses_request(request_model, request, options)?;
-        let mut stream = self
-            .client
-            .responses()
-            .create_stream_byot::<Value, Value>(body)
-            .await
-            .map_err(|e| map_stream_error("failed to create streaming response", &e))?;
-        let mut accumulator = ResponsesAccumulator::default();
-
-        loop {
-            let event_result = tokio::time::timeout(OPENAI_STREAM_IDLE_TIMEOUT, stream.next())
-                .await
-                .map_err(|_| accumulator.stream_error("Responses API stream idle timeout"))?;
-            let Some(event_result) = event_result else {
-                break;
-            };
-            let event = event_result.map_err(|error| {
-                accumulator.stream_error(format!("error in Responses API stream event: {error}"))
-            })?;
-            accumulator.apply_event(&event);
-            if accumulator.is_terminal() {
-                break;
-            }
-        }
-
-        accumulator.finish(model)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StreamingProvider {
-    WorkersAi,
-    OpenAi,
-    SelfHosted,
-    /// Mistral's chat API: a custom provider whose base URL is on
-    /// `mistral.ai`. Its schema is strict (unknown fields are a 422), so it
-    /// gets the standard `reasoning_effort` and no `reasoning_content` replay.
-    Mistral,
-}
-
-/// Append a delta's typed content blocks: `text` blocks to `text`, and the
-/// nested text of `thinking` blocks to `reasoning`. Returns whether any
-/// non-empty text was appended.
-fn push_content_blocks(blocks: &[Value], text: &mut String, reasoning: &mut String) -> bool {
-    let before = text.len() + reasoning.len();
-    for block in blocks {
-        match block.get("type").and_then(Value::as_str) {
-            Some("text") => {
-                if let Some(t) = block.get("text").and_then(Value::as_str) {
-                    text.push_str(t);
-                }
-            }
-            Some("thinking") => match block.get("thinking") {
-                Some(Value::String(t)) => reasoning.push_str(t),
-                Some(Value::Array(parts)) => {
-                    for t in parts
-                        .iter()
-                        .filter_map(|p| p.get("text").and_then(Value::as_str))
-                    {
-                        reasoning.push_str(t);
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-    text.len() + reasoning.len() > before
-}
-
-/// Whether a custom provider's base URL points at Mistral's API.
-fn is_mistral_base_url(base_url: &str) -> bool {
-    reqwest_compat::Url::parse(base_url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        .is_some_and(|host| host == "mistral.ai" || host.ends_with(".mistral.ai"))
-}
-
-impl StreamingProvider {
-    /// How to name this provider in an error a human will read. A run against
-    /// a self-hosted endpoint should not be told "Workers AI" timed out.
-    fn label(self) -> &'static str {
-        match self {
-            Self::WorkersAi => "Workers AI",
-            Self::OpenAi => "OpenAI",
-            Self::SelfHosted => "the configured endpoint",
-            Self::Mistral => "Mistral",
-        }
-    }
-}
-
-/// async-openai's default config always emits an Authorization header, which
-/// the opencode gateway rejects. The gateway authenticates only with this
-/// Cloudflare Access header.
-struct OpencodeConfig {
-    api_base: String,
-    access_token: SecretString,
-    headers: HeaderMap,
-}
-
-impl OpencodeConfig {
-    fn new(api_base: String, access_token: String) -> Result<Self> {
-        let mut token_header = HeaderValue::from_bytes(access_token.as_bytes())
-            .context("OPENCODE_ACCESS_TOKEN is not a valid HTTP header value")?;
-        token_header.set_sensitive(true);
-
-        let mut headers = HeaderMap::with_capacity(2);
-        headers.insert("cf-access-token", token_header);
-        headers.insert(USER_AGENT, HeaderValue::from_static(crate::USER_AGENT));
-
-        Ok(Self {
-            api_base,
-            access_token: access_token.into(),
-            headers,
-        })
-    }
-}
-
-impl OpenAIClientConfig for OpencodeConfig {
-    fn headers(&self) -> HeaderMap {
-        self.headers.clone()
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("{}{}", self.api_base, path)
-    }
-
-    fn query(&self) -> Vec<(&str, &str)> {
-        Vec::new()
-    }
-
-    fn api_base(&self) -> &str {
-        &self.api_base
-    }
-
-    fn api_key(&self) -> &SecretString {
-        &self.access_token
-    }
-}
-
-// ============================================================================
-// ChatClient impl
-// ============================================================================
-
-#[async_trait]
-impl ChatClient for StreamingClient {
-    async fn chat_completion(
-        &self,
-        model: &str,
-        request: ChatRequest,
-        options: Option<&ChatOptions>,
-    ) -> Result<ChatResponse> {
-        if self.provider == StreamingProvider::OpenAi {
-            return self.responses_completion(model, &request, options).await;
-        }
-
-        let request_model = strip_model_prefix(model, self.provider);
-
-        // Build the request body as a JSON Value
-        // `stream_options.include_usage` is what makes an OpenAI-compatible
-        // provider emit the final usage-only chunk. Without it, spec-faithful
-        // providers stream no usage at all and every call bills as unknown.
-        let mut body = json!({
-            "model": request_model,
-            "messages": serialize_messages(
-                &request.messages,
-                self.provider != StreamingProvider::Mistral,
-            ),
-            "stream": true,
-            "stream_options": { "include_usage": true },
-        });
-
-        // Add tools if present
-        if let Some(tools) = request.tools.as_ref().filter(|t| !t.is_empty()) {
-            body["tools"] = serialize_tools(tools);
-        }
-
-        // Add options
-        if let Some(opts) = options {
-            if let Some(temp) = opts.temperature {
-                body["temperature"] = json!(temp);
-            }
-            if let Some(max) = opts.max_tokens {
-                body["max_tokens"] = json!(max);
-            }
-            if let Some(ref output) = opts.structured_output {
-                body["response_format"] = serialize_structured_output(output);
-            }
-            if let Some(ref effort) = opts.reasoning_effort {
-                apply_reasoning_effort(&mut body, effort, self.provider);
-            }
-        }
+        let body = build_chat_body(request, request_model, options, self.provider, skip_effort);
 
         // Call the streaming endpoint via async-openai BYOT
         let mut chat = self.client.chat();
@@ -645,6 +373,376 @@ impl ChatClient for StreamingClient {
             truncated,
         })
     }
+
+    /// Create a new streaming client for Workers AI. With `base_url_override`,
+    /// `account_id` is ignored and the override is used verbatim.
+    pub fn new(
+        api_token: String,
+        account_id: String,
+        base_url_override: Option<String>,
+    ) -> Result<Self> {
+        let base_url = base_url_override.unwrap_or_else(|| {
+            format!(
+                "https://api.cloudflare.com/client/v4/accounts/{}/ai/v1",
+                account_id
+            )
+        });
+
+        let config = OpenAIConfig::new()
+            .with_api_base(base_url)
+            .with_api_key(api_token)
+            .with_header("User-Agent", crate::USER_AGENT)?;
+
+        let http_client = reqwest_compat::Client::builder()
+            .connect_timeout(OPENAI_CONNECT_TIMEOUT)
+            .timeout(OPENAI_REQUEST_TIMEOUT)
+            .build()
+            .context("Failed to create Workers AI HTTP client")?;
+        let client = Client::with_config(Box::new(config) as Box<dyn OpenAIClientConfig>)
+            .with_http_client(http_client);
+
+        Ok(Self {
+            client,
+            provider: StreamingProvider::WorkersAi,
+            effort_rejected: Mutex::new(HashSet::new()),
+        })
+    }
+
+    /// Create a generic OpenAI-compatible streaming client from an explicit
+    /// base URL and API key. Used for custom/self-hosted providers routed via
+    /// the standard `POST /v1/chat/completions` endpoint.
+    pub fn from_url(api_key: String, base_url: String) -> Result<Self> {
+        let provider = if is_mistral_base_url(&base_url) {
+            StreamingProvider::Mistral
+        } else {
+            StreamingProvider::SelfHosted
+        };
+        let config = OpenAIConfig::new()
+            .with_api_base(base_url)
+            .with_api_key(api_key)
+            .with_header("User-Agent", crate::USER_AGENT)?;
+
+        let http_client = reqwest_compat::Client::builder()
+            .connect_timeout(OPENAI_CONNECT_TIMEOUT)
+            .timeout(OPENAI_REQUEST_TIMEOUT)
+            .build()
+            .context("Failed to create self-hosted provider HTTP client")?;
+        let client = Client::with_config(Box::new(config) as Box<dyn OpenAIClientConfig>)
+            .with_http_client(http_client);
+
+        Ok(Self {
+            client,
+            provider,
+            effort_rejected: Mutex::new(HashSet::new()),
+        })
+    }
+
+    /// Create a streaming client for the OpenAI Responses API.
+    ///
+    /// An API key talks to `https://api.openai.com/v1` unless `base_url_override`
+    /// is set. An opencode gateway token has no default endpoint, so it needs
+    /// `base_url_override`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the endpoint is missing for a gateway token, is not an
+    /// HTTPS URL, or carries a query or fragment.
+    pub fn new_openai(auth: OpenAiAuth, base_url_override: Option<String>) -> Result<Self> {
+        let raw_base_url = match (&auth, base_url_override) {
+            (_, Some(url)) => url,
+            (OpenAiAuth::ApiKey(_), None) => DEFAULT_OPENAI_BASE_URL.to_string(),
+            (OpenAiAuth::OpencodeToken(_), None) => {
+                anyhow::bail!("OPENCODE_ACCESS_TOKEN needs FLAWRENCE_OPENAI_BASE_URL")
+            }
+        };
+        let parsed_base_url = reqwest_compat::Url::parse(&raw_base_url)
+            .context("FLAWRENCE_OPENAI_BASE_URL is not a valid URL")?;
+        anyhow::ensure!(
+            parsed_base_url.scheme() == "https",
+            "FLAWRENCE_OPENAI_BASE_URL must use HTTPS"
+        );
+        anyhow::ensure!(
+            parsed_base_url.query().is_none() && parsed_base_url.fragment().is_none(),
+            "FLAWRENCE_OPENAI_BASE_URL cannot contain a query or fragment"
+        );
+        let base_url = parsed_base_url.as_str().trim_end_matches('/').to_string();
+        let config: Box<dyn OpenAIClientConfig> = match auth {
+            OpenAiAuth::ApiKey(key) => Box::new(
+                OpenAIConfig::new()
+                    .with_api_base(base_url)
+                    .with_api_key(key)
+                    .with_header("User-Agent", crate::USER_AGENT)?,
+            ),
+            OpenAiAuth::OpencodeToken(token) => Box::new(OpencodeConfig::new(base_url, token)?),
+        };
+        let http_client = reqwest_compat::Client::builder()
+            .redirect(reqwest_compat::redirect::Policy::none())
+            .connect_timeout(OPENAI_CONNECT_TIMEOUT)
+            .timeout(OPENAI_REQUEST_TIMEOUT)
+            .build()
+            .context("Failed to create OpenAI HTTP client")?;
+        let client = Client::with_config(config).with_http_client(http_client);
+
+        Ok(Self {
+            client,
+            provider: StreamingProvider::OpenAi,
+            effort_rejected: Mutex::new(HashSet::new()),
+        })
+    }
+
+    async fn responses_completion(
+        &self,
+        model: &str,
+        request: &ChatRequest,
+        options: Option<&ChatOptions>,
+    ) -> Result<ChatResponse> {
+        let request_model = strip_model_prefix(model, self.provider);
+        let body = build_responses_request(request_model, request, options)?;
+        let mut stream = self
+            .client
+            .responses()
+            .create_stream_byot::<Value, Value>(body)
+            .await
+            .map_err(|e| map_stream_error("failed to create streaming response", &e))?;
+        let mut accumulator = ResponsesAccumulator::default();
+
+        loop {
+            let event_result = tokio::time::timeout(OPENAI_STREAM_IDLE_TIMEOUT, stream.next())
+                .await
+                .map_err(|_| accumulator.stream_error("Responses API stream idle timeout"))?;
+            let Some(event_result) = event_result else {
+                break;
+            };
+            let event = event_result.map_err(|error| {
+                accumulator.stream_error(format!("error in Responses API stream event: {error}"))
+            })?;
+            accumulator.apply_event(&event);
+            if accumulator.is_terminal() {
+                break;
+            }
+        }
+
+        accumulator.finish(model)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamingProvider {
+    WorkersAi,
+    OpenAi,
+    SelfHosted,
+    /// Mistral's chat API: a custom provider whose base URL is on
+    /// `mistral.ai`. Its schema is strict (unknown fields are a 422), so it
+    /// gets the standard `reasoning_effort` and no `reasoning_content` replay.
+    Mistral,
+}
+
+/// Append a delta's typed content blocks: `text` blocks to `text`, and the
+/// nested text of `thinking` blocks to `reasoning`. Returns whether any
+/// non-empty text was appended.
+fn push_content_blocks(blocks: &[Value], text: &mut String, reasoning: &mut String) -> bool {
+    let before = text.len() + reasoning.len();
+    for block in blocks {
+        match block.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                if let Some(t) = block.get("text").and_then(Value::as_str) {
+                    text.push_str(t);
+                }
+            }
+            Some("thinking") => match block.get("thinking") {
+                Some(Value::String(t)) => reasoning.push_str(t),
+                Some(Value::Array(parts)) => {
+                    for t in parts
+                        .iter()
+                        .filter_map(|p| p.get("text").and_then(Value::as_str))
+                    {
+                        reasoning.push_str(t);
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    text.len() + reasoning.len() > before
+}
+
+/// Whether a custom provider's base URL points at Mistral's API.
+fn is_mistral_base_url(base_url: &str) -> bool {
+    reqwest_compat::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == "mistral.ai" || host.ends_with(".mistral.ai"))
+}
+
+impl StreamingProvider {
+    /// How to name this provider in an error a human will read. A run against
+    /// a self-hosted endpoint should not be told "Workers AI" timed out.
+    fn label(self) -> &'static str {
+        match self {
+            Self::WorkersAi => "Workers AI",
+            Self::OpenAi => "OpenAI",
+            Self::SelfHosted => "the configured endpoint",
+            Self::Mistral => "Mistral",
+        }
+    }
+}
+
+/// async-openai's default config always emits an Authorization header, which
+/// the opencode gateway rejects. The gateway authenticates only with this
+/// Cloudflare Access header.
+struct OpencodeConfig {
+    api_base: String,
+    access_token: SecretString,
+    headers: HeaderMap,
+}
+
+impl OpencodeConfig {
+    fn new(api_base: String, access_token: String) -> Result<Self> {
+        let mut token_header = HeaderValue::from_bytes(access_token.as_bytes())
+            .context("OPENCODE_ACCESS_TOKEN is not a valid HTTP header value")?;
+        token_header.set_sensitive(true);
+
+        let mut headers = HeaderMap::with_capacity(2);
+        headers.insert("cf-access-token", token_header);
+        headers.insert(USER_AGENT, HeaderValue::from_static(crate::USER_AGENT));
+
+        Ok(Self {
+            api_base,
+            access_token: access_token.into(),
+            headers,
+        })
+    }
+}
+
+impl OpenAIClientConfig for OpencodeConfig {
+    fn headers(&self) -> HeaderMap {
+        self.headers.clone()
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}{}", self.api_base, path)
+    }
+
+    fn query(&self) -> Vec<(&str, &str)> {
+        Vec::new()
+    }
+
+    fn api_base(&self) -> &str {
+        &self.api_base
+    }
+
+    fn api_key(&self) -> &SecretString {
+        &self.access_token
+    }
+}
+
+// ============================================================================
+// ChatClient impl
+// ============================================================================
+
+#[async_trait]
+impl ChatClient for StreamingClient {
+    async fn chat_completion(
+        &self,
+        model: &str,
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+    ) -> Result<ChatResponse> {
+        if self.provider == StreamingProvider::OpenAi {
+            return self.responses_completion(model, &request, options).await;
+        }
+
+        let request_model = strip_model_prefix(model, self.provider);
+        let skip_effort = self.effort_rejected(request_model);
+        let response = self
+            .chat_attempt(request_model, model, &request, options, skip_effort)
+            .await;
+
+        // A permanent error that names the field means this model does not
+        // take `reasoning_effort` at all (Mistral 3051: "reasoning_effort is
+        // not enabled for this model"). A retryable failure must not disable
+        // the field — the task loop retries those with the same options, so
+        // disabling on a hiccup would silently downgrade a healthy model.
+        // Remember the model so later calls omit the field from the start,
+        // and retry this call once without it.
+        match response {
+            Err(e)
+                if !skip_effort
+                    && options.is_some_and(|o| o.reasoning_effort.is_some())
+                    && effort_rejected_error(&e) =>
+            {
+                self.remember_effort_rejected(request_model);
+                self.chat_attempt(request_model, model, &request, options, true)
+                    .await
+            }
+            other => other,
+        }
+    }
+}
+/// Serialize a chat-completions request body. `skip_reasoning_effort` omits
+/// the effort fields for a model the provider has already rejected the field
+/// for (see [`StreamingClient::remember_effort_rejected`]).
+fn build_chat_body(
+    request: &ChatRequest,
+    model: &str,
+    options: Option<&ChatOptions>,
+    provider: StreamingProvider,
+    skip_reasoning_effort: bool,
+) -> Value {
+    // `stream_options.include_usage` is what makes an OpenAI-compatible
+    // provider emit the final usage-only chunk. Without it, spec-faithful
+    // providers stream no usage at all and every call bills as unknown.
+    let mut body = json!({
+        "model": model,
+        "messages": serialize_messages(
+            &request.messages,
+            provider != StreamingProvider::Mistral,
+        ),
+        "stream": true,
+        "stream_options": { "include_usage": true },
+    });
+
+    // Add tools if present
+    if let Some(tools) = request.tools.as_ref().filter(|t| !t.is_empty()) {
+        body["tools"] = serialize_tools(tools);
+    }
+
+    // Add options
+    if let Some(opts) = options {
+        if let Some(temp) = opts.temperature {
+            body["temperature"] = json!(temp);
+        }
+        if let Some(max) = opts.max_tokens {
+            body["max_tokens"] = json!(max);
+        }
+        if let Some(ref output) = opts.structured_output {
+            body["response_format"] = serialize_structured_output(output);
+        }
+        if let Some(ref effort) = opts.reasoning_effort
+            && !skip_reasoning_effort
+        {
+            apply_reasoning_effort(&mut body, effort, provider);
+        }
+    }
+    body
+}
+
+/// A permanent error naming the field means the model does not take
+/// `reasoning_effort` at all (Mistral 3051: "reasoning_effort is not enabled
+/// for this model"). Matching on the field name instead of one provider's
+/// full sentence keeps the fallback working when a provider rewords its
+/// error; the cost of a false positive is one silently dropped capability.
+fn effort_rejection(message: &str) -> bool {
+    let lowered = message.to_ascii_lowercase();
+    lowered.contains("reasoning_effort") || lowered.contains("reasoning effort")
+}
+
+/// Whether `e` is a permanent provider rejection of `reasoning_effort`.
+fn effort_rejected_error(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<StreamingRequestError>()
+        .is_some_and(|classified| !classified.retryable())
+        && effort_rejection(&format!("{e:#}"))
 }
 
 fn strip_model_prefix(model: &str, provider: StreamingProvider) -> &str {
@@ -711,6 +809,12 @@ fn build_responses_request(
 /// with the free-text message as a last resort. This is what stops a transient
 /// 503 whose body mentions "authentication" from being read as permanent.
 fn map_stream_error(context: &str, error: &OpenAIError) -> anyhow::Error {
+    classify_stream_error(context, error).into()
+}
+
+/// The classified error, before conversion into an `anyhow::Error`, so call
+/// sites can read `retryable` without downcasting.
+fn classify_stream_error(context: &str, error: &OpenAIError) -> StreamingRequestError {
     let raw = error.to_string();
 
     let mut status = None;
@@ -755,7 +859,6 @@ fn map_stream_error(context: &str, error: &OpenAIError) -> anyhow::Error {
         billing_unknown: retryable && billing_is_uncertain(&raw),
         message,
     }
-    .into()
 }
 
 /// A provider error object recovered from a streamed JSON body.
@@ -1931,5 +2034,190 @@ mod truncation_signal {
         assert_eq!(reason(&done), Some(false));
         // Mid-stream chunks carry no finish reason and must not clear it.
         assert_eq!(reason(&mid), None);
+    }
+
+    #[test]
+    fn chat_body_omits_reasoning_effort_for_a_rejected_model() {
+        let request = ChatRequest::new(vec![ChatMessage::user("hi")]);
+        let options = ChatOptions::default().with_reasoning_effort(ReasoningEffort::High);
+
+        let with = build_chat_body(
+            &request,
+            "ministral-3b",
+            Some(&options),
+            StreamingProvider::Mistral,
+            false,
+        );
+        assert_eq!(with["reasoning_effort"], json!("high"));
+
+        let without = build_chat_body(
+            &request,
+            "ministral-3b",
+            Some(&options),
+            StreamingProvider::Mistral,
+            true,
+        );
+        assert!(without.get("reasoning_effort").is_none());
+        // Unrelated options still pass through.
+        assert_eq!(without["model"], json!("ministral-3b"));
+    }
+
+    #[test]
+    fn effort_rejection_matches_the_field_not_one_sentence() {
+        assert!(effort_rejection(
+            "reasoning_effort is not enabled for this model"
+        ));
+        assert!(effort_rejection(
+            "invalid_request_error: unknown field reasoning_effort (code: 3051)"
+        ));
+        assert!(effort_rejection(
+            "Reasoning effort is disabled for this model"
+        ));
+        assert!(!effort_rejection("rate limit exceeded"));
+        assert!(!effort_rejection("model not found"));
+    }
+
+    /// A minimal successful chat-completions SSE response.
+    const MOCK_SUCCESS_SSE: &str = concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "content-type: text/event-stream\r\n",
+        "connection: close\r\n\r\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
+        "data: [DONE]\n\n",
+    );
+
+    /// Read one HTTP request off `listener`, record its body, and answer with
+    /// Mistral's effort-rejection on the first request and `MOCK_SUCCESS_SSE`
+    /// afterwards — exactly the sequence the fallback is supposed to handle.
+    fn mock_provider_body(listener: &std::net::TcpListener, bodies: &Mutex<Vec<String>>) {
+        use std::io::{Read, Write};
+        let (mut socket, _) = listener.accept().expect("mock provider: accept");
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 8192];
+        let request_body = loop {
+            if let Some(header_end) = buf.windows(4).position(|window| window == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&buf[..header_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        if name.trim().eq_ignore_ascii_case("content-length") {
+                            value.trim().parse::<usize>().ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0);
+                let body_start = header_end + 4;
+                if buf.len() >= body_start + content_length {
+                    break String::from_utf8_lossy(&buf[body_start..body_start + content_length])
+                        .into_owned();
+                }
+            }
+            let read = socket.read(&mut chunk).expect("mock provider: read");
+            assert!(read > 0, "mock provider: connection closed mid-request");
+            buf.extend_from_slice(&chunk[..read]);
+        };
+        let count = {
+            let mut all = bodies.lock().unwrap();
+            all.push(request_body);
+            all.len()
+        };
+        let (status_line, content_type, payload) = if count == 1 {
+            let error = r#"{"error":{"message":"reasoning_effort is not enabled for this model","type":"invalid_request_error","code":"3051"}}"#;
+            (
+                "HTTP/1.1 400 Bad Request",
+                "application/json",
+                error.to_string(),
+            )
+        } else {
+            (
+                "HTTP/1.1 200 OK",
+                "text/event-stream",
+                MOCK_SUCCESS_SSE.into(),
+            )
+        };
+        let response = format!(
+            "{status_line}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+            payload.len()
+        );
+        socket
+            .write_all(response.as_bytes())
+            .expect("mock provider: write");
+        let _ = socket.shutdown(std::net::Shutdown::Both);
+    }
+
+    /// The fallback runs against the real client path: the first request
+    /// carries `reasoning_effort` and fails with Mistral error 3051, the retry
+    /// omits the field, and the model is remembered so later calls skip the
+    /// failing request entirely. Delete the fallback and this fails.
+    #[tokio::test]
+    async fn effort_fallback_retries_once_then_skips_the_field() {
+        use std::sync::Arc;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let server_bodies = Arc::clone(&bodies);
+        let server = std::thread::spawn(move || {
+            for _ in 0..3 {
+                mock_provider_body(&listener, &server_bodies);
+            }
+        });
+
+        let http = reqwest_compat::Client::builder().build().unwrap();
+        let config = OpenAIConfig::new()
+            .with_api_base(base_url)
+            .with_api_key("test-key".to_string())
+            .with_header("User-Agent", crate::USER_AGENT)
+            .unwrap();
+        let streaming = StreamingClient {
+            client: Client::with_config(Box::new(config) as Box<dyn OpenAIClientConfig>)
+                .with_http_client(http),
+            provider: StreamingProvider::Mistral,
+            effort_rejected: Mutex::new(HashSet::new()),
+        };
+
+        let options = ChatOptions::default().with_reasoning_effort(ReasoningEffort::High);
+        let request = ChatRequest::new(vec![ChatMessage::user("hi")]);
+
+        let response = streaming
+            .chat_completion("ministral-3b", request.clone(), Some(&options))
+            .await
+            .unwrap();
+        assert_eq!(response.content.first_text(), Some("ok"));
+
+        {
+            let all = bodies.lock().unwrap();
+            assert_eq!(all.len(), 2, "expected the failed request plus one retry");
+            assert!(
+                all[0].contains("reasoning_effort"),
+                "first request should carry the field: {}",
+                all[0]
+            );
+            assert!(
+                !all[1].contains("reasoning_effort"),
+                "retry should omit the field: {}",
+                all[1]
+            );
+        }
+
+        // The model is remembered: the next call sends a single request,
+        // already without the field.
+        let response = streaming
+            .chat_completion("ministral-3b", request, Some(&options))
+            .await
+            .unwrap();
+        assert_eq!(response.content.first_text(), Some("ok"));
+        let all = bodies.lock().unwrap();
+        assert_eq!(all.len(), 3);
+        assert!(
+            !all[2].contains("reasoning_effort"),
+            "remembered model should skip the field: {}",
+            all[2]
+        );
+        drop(all);
+        server.join().unwrap();
     }
 }

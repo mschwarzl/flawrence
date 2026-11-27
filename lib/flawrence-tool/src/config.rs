@@ -12,6 +12,12 @@ pub const DEFAULT_MAX_TOKENS: u32 = 65_536;
 pub const DEFAULT_PREWARM_BUILD: bool = true;
 /// Whether worktrees are isolated when `FLAWRENCE_WORKTREE_ISOLATION` is absent.
 pub const DEFAULT_WORKTREE_ISOLATION: bool = false;
+/// Consecutive rate-limit responses after which an API call gives up, when
+/// `FLAWRENCE_MAX_RATE_LIMIT_RETRIES` is absent.
+pub const DEFAULT_MAX_RATE_LIMIT_RETRIES: u64 = 10;
+/// Longest single rate-limit backoff sleep in seconds, when
+/// `FLAWRENCE_RATE_LIMIT_BACKOFF_CAP_SECS` is absent.
+pub const DEFAULT_RATE_LIMIT_BACKOFF_CAP_SECS: u64 = 120;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ClientMode {
@@ -78,6 +84,11 @@ pub struct Config {
     pub prewarm_build: bool,
     /// Wall-clock ceiling for the pre-warm build, in seconds.
     pub prewarm_timeout_secs: u64,
+    /// Consecutive rate-limit (429) responses after which a single API call
+    /// gives up. The streak resets on any non-rate-limit outcome.
+    pub max_rate_limit_retries: u64,
+    /// Upper bound on a single rate-limit backoff sleep, in seconds.
+    pub rate_limit_backoff_cap_secs: u64,
     pub providers: HashMap<String, ProviderConfig>,
 }
 
@@ -149,6 +160,17 @@ impl Config {
         // SIGKILL a healthy build partway and leave the agents a half-populated
         // build directory. Default generously and let the operator lower it.
         let prewarm_timeout_secs = parse_u64_env("FLAWRENCE_PREWARM_TIMEOUT_SECS", 90 * 60);
+        // Rate limits get their own streak counter and backoff cap so a
+        // fan-out that trips a shared provider limit fails the call after a
+        // bounded wait instead of sitting out the 30-minute wall-clock limit.
+        let max_rate_limit_retries = parse_u64_env(
+            "FLAWRENCE_MAX_RATE_LIMIT_RETRIES",
+            DEFAULT_MAX_RATE_LIMIT_RETRIES,
+        );
+        let rate_limit_backoff_cap_secs = parse_u64_env(
+            "FLAWRENCE_RATE_LIMIT_BACKOFF_CAP_SECS",
+            DEFAULT_RATE_LIMIT_BACKOFF_CAP_SECS,
+        );
         let client_mode = match env::var("FLAWRENCE_CLIENT").as_deref() {
             Ok("batch") => ClientMode::Batch,
             _ => ClientMode::Streaming,
@@ -159,8 +181,15 @@ impl Config {
             let Some(rest) = key.strip_prefix("FLAWRENCE_PROVIDER_") else {
                 continue;
             };
-            let Some((name, field)) = rest.split_once('_') else {
-                continue;
+            // Env vars cannot hold a dash, so the built-in `workers-ai` name
+            // is spelled `WORKERS_AI_*`; every other name splits on the first
+            // underscore.
+            let (name, field) = match rest.strip_prefix("WORKERS_AI_") {
+                Some(field) => ("workers-ai", field),
+                None => match rest.split_once('_') {
+                    Some(split) => split,
+                    None => continue,
+                },
             };
             let name = name.to_lowercase();
             let entry = providers.entry(name).or_default();
@@ -171,6 +200,20 @@ impl Config {
             }
         }
         providers.retain(|_, p| !p.base_url.is_empty() && !p.api_key.is_empty());
+
+        // A custom provider named like a built-in prefix is silently shadowed
+        // by the built-in client, so the env vars look set but are never used.
+        // The list comes from the router so the warning cannot drift from what
+        // actually gets shadowed.
+        for prefix in flawrence_api::routing::BUILTIN_MODEL_PREFIXES {
+            let name = prefix.trim_end_matches('/');
+            if providers.contains_key(name) {
+                eprintln!(
+                    "Warning: FLAWRENCE_PROVIDER_{}_* is ignored: '{name}' is a built-in provider prefix; rename the provider (e.g. '{name}-custom')",
+                    name.to_uppercase()
+                );
+            }
+        }
 
         Ok(Config {
             cf_api_token,
@@ -198,6 +241,8 @@ impl Config {
             worktree_isolation,
             prewarm_build,
             prewarm_timeout_secs,
+            max_rate_limit_retries,
+            rate_limit_backoff_cap_secs,
             providers,
         })
     }
@@ -332,6 +377,14 @@ impl Config {
         push(
             "FLAWRENCE_PREWARM_TIMEOUT_SECS",
             self.prewarm_timeout_secs.to_string(),
+        );
+        push(
+            "FLAWRENCE_MAX_RATE_LIMIT_RETRIES",
+            self.max_rate_limit_retries.to_string(),
+        );
+        push(
+            "FLAWRENCE_RATE_LIMIT_BACKOFF_CAP_SECS",
+            self.rate_limit_backoff_cap_secs.to_string(),
         );
         push(
             "VULN_INGEST_TOKEN_PATH",
@@ -697,6 +750,8 @@ mod tests {
             worktree_isolation: false,
             prewarm_build: true,
             prewarm_timeout_secs: 5400,
+            max_rate_limit_retries: super::DEFAULT_MAX_RATE_LIMIT_RETRIES,
+            rate_limit_backoff_cap_secs: super::DEFAULT_RATE_LIMIT_BACKOFF_CAP_SECS,
             providers: HashMap::new(),
         }
     }

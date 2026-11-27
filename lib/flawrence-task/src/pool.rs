@@ -1025,6 +1025,8 @@ Review parser and return a final report.
             worktree_isolation: false,
             prewarm_build: false,
             prewarm_timeout_secs: 5400,
+            max_rate_limit_retries: 10,
+            rate_limit_backoff_cap_secs: 120,
             providers: Default::default(),
         }
     }

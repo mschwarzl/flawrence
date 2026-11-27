@@ -22,6 +22,8 @@ The runner also loads `.env` from the working directory unless you pass `--no-do
 | `FLAWRENCE_STRICT_TOOLS` | Set to `0` for a provider that rejects strict tool schemas. |
 | `FLAWRENCE_STREAM_IDLE_TIMEOUT_SECS` | Abort a streamed response after this many silent seconds. Default 120. |
 | `FLAWRENCE_MAX_API_RETRIES` | Retries for a failing model request. Default 50. |
+| `FLAWRENCE_RATE_LIMIT_BACKOFF_CAP_SECS` | Cap for the rate-limit backoff (30s, 60s, then this). Default 120. |
+| `FLAWRENCE_MAX_RATE_LIMIT_RETRIES` | Give up on a call after this many consecutive rate-limit responses. Default 10. |
 
 ## Limits
 
