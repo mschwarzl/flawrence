@@ -24,6 +24,8 @@ pub enum ClientMode {
 pub struct ProviderConfig {
     pub base_url: String,
     pub api_key: String,
+    /// Extra HTTP headers, from `FLAWRENCE_PROVIDER_<NAME>_HEADER_<KEY>` env vars.
+    pub headers: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -167,7 +169,13 @@ impl Config {
             match field {
                 "BASE_URL" => entry.base_url = value,
                 "API_KEY" => entry.api_key = value,
-                _ => {}
+                _ => {
+                    if let Some(header) = field.strip_prefix("HEADER_") {
+                        // Env vars cannot hold dashes, so HEADER_X_OPENCODE_SESSION
+                        // maps to the HTTP header `x-opencode-session`.
+                        entry.headers.insert(header.replace('_', "-"), value);
+                    }
+                }
             }
         }
         providers.retain(|_, p| !p.base_url.is_empty() && !p.api_key.is_empty());
@@ -370,6 +378,16 @@ impl Config {
                 &format!("FLAWRENCE_PROVIDER_{}_API_KEY", name.to_uppercase()),
                 secret_state(Some(provider.api_key.as_str())),
             );
+            for header in provider.headers.keys() {
+                push(
+                    &format!(
+                        "FLAWRENCE_PROVIDER_{}_HEADER_{}",
+                        name.to_uppercase(),
+                        header.to_uppercase()
+                    ),
+                    "set (redacted)".to_string(),
+                );
+            }
         }
 
         for name in EXTRA_ENV_SETTINGS {
@@ -611,6 +629,10 @@ mod tests {
                 ProviderConfig {
                     base_url: "https://vllm.internal/v1".to_string(),
                     api_key: "provider-secret".to_string(),
+                    headers: std::collections::BTreeMap::from([(
+                        "X-Opencode-Session".to_string(),
+                        "sess-secret".to_string(),
+                    )]),
                 },
             )]),
             ..blank_config()
@@ -638,6 +660,10 @@ mod tests {
         }
         assert!(rendered.contains("ANTHROPIC_API_KEY=set (redacted)"));
         assert!(rendered.contains("FLAWRENCE_PROVIDER_VLLM_API_KEY=set (redacted)"));
+        assert!(
+            rendered.contains("FLAWRENCE_PROVIDER_VLLM_HEADER_X-OPENCODE-SESSION=set (redacted)")
+        );
+        assert!(!rendered.contains("sess-secret"));
         assert!(rendered.contains("https://***@proxy.internal/v1"));
         assert!(rendered.contains("https://vllm.internal/v1"));
     }

@@ -14,6 +14,7 @@ The runner also loads `.env` from the working directory unless you pass `--no-do
 | `OPENCODE_ACCESS_TOKEN` | Token for an opencode gateway instead of an API key. It needs `FLAWRENCE_OPENAI_BASE_URL`. |
 | `FLAWRENCE_PROVIDER_<NAME>_BASE_URL` | Base URL of a custom OpenAI-compatible provider. It ends in `/v1`. |
 | `FLAWRENCE_PROVIDER_<NAME>_API_KEY` | Key for that provider, sent as a bearer token. |
+| `FLAWRENCE_PROVIDER_<NAME>_HEADER_<KEY>` | Extra HTTP header sent with every request (repeatable). Example: `FLAWRENCE_PROVIDER_OPENCODE_HEADER_X-OPENCODE-SESSION=<session-id>` for OpenCode Go, which requires `x-opencode-session`. |
 | `FLAWRENCE_ANTHROPIC_BASE_URL` | Other base URL for Anthropic. |
 | `FLAWRENCE_OPENAI_BASE_URL` | Other HTTPS base URL for the `openai/` Responses client. |
 | `FLAWRENCE_WORKERS_AI_BASE_URL` | Other base URL for Workers AI. |

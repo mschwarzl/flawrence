@@ -205,15 +205,33 @@ impl StreamingClient {
     /// base URL and API key. Used for custom/self-hosted providers routed via
     /// the standard `POST /v1/chat/completions` endpoint.
     pub fn from_url(api_key: String, base_url: String) -> Result<Self> {
+        Self::from_url_with_headers(api_key, base_url, &[])
+    }
+
+    /// Create a generic OpenAI-compatible streaming client with extra headers.
+    /// Used for providers that require routing/session headers such as
+    /// OpenCode Go's `x-opencode-session`.
+    pub fn from_url_with_headers(
+        api_key: String,
+        base_url: String,
+        headers: &[(String, String)],
+    ) -> Result<Self> {
         let provider = if is_mistral_base_url(&base_url) {
             StreamingProvider::Mistral
         } else {
             StreamingProvider::SelfHosted
         };
-        let config = OpenAIConfig::new()
+        let mut config = OpenAIConfig::new()
             .with_api_base(base_url)
             .with_api_key(api_key)
             .with_header("User-Agent", crate::USER_AGENT)?;
+        for (key, value) in headers {
+            let name = reqwest_compat::header::HeaderName::try_from(key.as_str())
+                .with_context(|| format!("invalid header name: {key}"))?;
+            config = config
+                .with_header(name, value.as_str())
+                .map_err(|e| anyhow::anyhow!("invalid custom provider header {key}: {e}"))?;
+        }
 
         let http_client = reqwest_compat::Client::builder()
             .connect_timeout(OPENAI_CONNECT_TIMEOUT)

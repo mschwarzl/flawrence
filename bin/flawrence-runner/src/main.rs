@@ -314,9 +314,17 @@ async fn main() -> Result<()> {
 
     // Custom OpenAI-compatible providers from FLAWRENCE_PROVIDER_* env vars
     for (name, provider_cfg) in &config.providers {
-        let client =
-            StreamingClient::from_url(provider_cfg.api_key.clone(), provider_cfg.base_url.clone())
-                .with_context(|| format!("Failed to create client for provider: {name}"))?;
+        let headers: Vec<(String, String)> = provider_cfg
+            .headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let client = StreamingClient::from_url_with_headers(
+            provider_cfg.api_key.clone(),
+            provider_cfg.base_url.clone(),
+            &headers,
+        )
+        .with_context(|| format!("Failed to create client for provider: {name}"))?;
         router = router.with_provider(name.clone(), std::sync::Arc::new(client));
     }
 
