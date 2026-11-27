@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{# Shared by page.html and section.html: sidebar (guide only), article, "On this page". #}
+{% block title %}{% set doc = page | default(value=section) %}{{ doc.title }} | {{ config.title }}{% endblock title %}
+{% block content %}
+{% set doc = page | default(value=section) %}
+{% set in_guide = doc.path is starting_with(pat="/guide/") %}
+<div class="doc{% if in_guide %} with-nav{% endif %}">
+{% if in_guide %}{% set guide = get_section(path="guide/_index.md") %}
+<nav class="side" aria-label="Guide"><strong>Guide</strong>
+<a href="{{ guide.permalink }}"{% if doc.path == guide.path %} aria-current="page"{% endif %}>Overview</a>
+{% for p in guide.pages %}<a href="{{ p.permalink }}"{% if doc.path == p.path %} aria-current="page"{% endif %}>{{ p.title }}</a>{% endfor %}</nav>
+{% endif %}
+<article class="prose"><p class="eyebrow">/// FLAWRENCE.OS // {% if in_guide %}GUIDE{% else %}DOCUMENTATION{% endif %}</p><h1>{{ doc.title }}</h1>{{ doc.content | safe }}
+{% if doc.extra.source %}<p class="muted source">Source: <a href="{{ config.extra.repo }}/blob/main/{{ doc.extra.source }}">{{ doc.extra.source }}</a></p>{% endif %}</article>
+{% if doc.toc %}<nav class="toc" aria-label="On this page"><strong>On this page</strong>
+{% for h in doc.toc %}<a href="{{ h.permalink }}">{{ h.title }}</a>{% for c in h.children %}<a class="sub" href="{{ c.permalink }}">{{ c.title }}</a>{% endfor %}{% endfor %}</nav>{% endif %}
+</div>
+{% endblock content %}

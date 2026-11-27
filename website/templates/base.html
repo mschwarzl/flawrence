@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ config.title }}{% endblock title %}</title>
+<meta name="description" content="{{ config.description }}">
+<link rel="icon" href="{{ get_url(path='harp.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ get_url(path='launcher-brand.css') }}">
+<link rel="stylesheet" href="{{ get_url(path='site.css') }}">
+</head><body><header><a class="brand" href="{{ config.base_url }}/" aria-label="Home" title="Home"><span class="harp" aria-hidden="true"><span class="harp-mark"></span></span></a><nav aria-label="Main navigation"><a href="{{ get_url(path='@/guide/_index.md') }}">Guide</a><a href="{{ get_url(path='@/findings.md') }}">Findings</a><a href="{{ config.extra.repo }}">GitHub &#8599;</a></nav></header>
+<main id="main">{% block content %}{% endblock content %}</main>
+<footer>FLAWRENCE // <a href="{{ config.extra.repo }}/blob/main/LICENSE">MIT</a> &middot; <a href="{{ get_url(path='@/imprint.md') }}">Imprint</a> &middot; Harp by Magnific / <a href="https://www.flaticon.com/free-icon/harp_4752991">Flaticon</a></footer></body></html>

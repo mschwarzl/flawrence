@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><div class="hero-text"><p class="eyebrow">/// FLAWRENCE.OS // SECURITY RESEARCH</p><h1>Find flaws. <span>Verify them. Fix them.</span></h1><p class="lede">LLM-based vulnerability analysis for everyone.<br>Written in Rust; powered by the models you choose.</p><div class="actions"><a class="button" href="{{ get_url(path='@/guide/_index.md') }}">Get started &#8594;</a><a class="button secondary" href="{{ get_url(path='@/findings.md') }}">View findings</a></div></div><span class="harp hero-harp" role="img" aria-label="Flawrence harp"><span class="harp-mark"></span></span></section>
+<div class="landing-grid"><section class="panel"><p class="eyebrow">// REVIEW PIPELINE</p><ol class="pipeline"><li>Threat model</li><li>Attack surface</li><li>Parallel research</li><li>Independent validation</li><li>Proof of concept</li><li>Verified findings</li></ol></section><section class="panel prose"><p class="eyebrow">// OPERATOR NOTES</p>{{ section.content | safe }}</section></div>
+{% endblock content %}

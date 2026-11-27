@@ -1,0 +1,10 @@
+base_url = "https://mschwarzl.github.io/flawrence"
+title = "Flawrence"
+description = "Agentic vulnerability discovery for source code."
+[markdown]
+github_alerts = true
+[markdown.highlighting]
+theme = "github-dark"
+[extra]
+repo = "https://github.com/mschwarzl/flawrence"
+screenshot = "https://github.com/user-attachments/assets/f2d1acea-aa25-4e3f-9e3a-6d740c6a9a28"
