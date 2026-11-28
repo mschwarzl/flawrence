@@ -10,3 +10,6 @@ artifacts*
 errors.log
 *.log
 /plans
+
+# Python bytecode from the contrib test suite.
+__pycache__/
